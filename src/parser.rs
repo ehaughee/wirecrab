@@ -4,14 +4,19 @@ use pcap_parser::*;
 use std::collections::HashMap;
 use std::fs::File;
 
+struct InterfaceDescription {
+    linktype: Linktype,
+    ts_resolution: u8,
+    ts_offset: i64,
+}
+
 pub fn parse(file_path: &str) -> HashMap<FlowKey, Flow> {
     // TODO: Return a result from parse and handle errors in main instead of panicking
     let file = File::open(file_path).expect("Failed to open file");
     let mut num_blocks = 0;
     let mut reader = PcapNGReader::new(65536, file).expect("Failed to create reader");
     let mut flows: HashMap<FlowKey, Flow> = HashMap::new();
-    // Track link types per interface (index = if_id)
-    let mut if_linktypes: Vec<pcap_parser::Linktype> = Vec::new();
+    let mut interfaces: Vec<InterfaceDescription> = Vec::new();
 
     loop {
         match reader.next() {
@@ -19,15 +24,19 @@ pub fn parse(file_path: &str) -> HashMap<FlowKey, Flow> {
                 num_blocks += 1;
                 match block {
                     PcapBlockOwned::NG(Block::SectionHeader(ref _shb)) => {
-                        // New section: reset interface linktypes
-                        if_linktypes.clear();
+                        // New section: reset interface tracking
+                        interfaces.clear();
                     }
-                    PcapBlockOwned::NG(Block::InterfaceDescription(ref idb)) => {
-                        // Remember linktype for this interface (if_id maps to index here)
-                        if_linktypes.push(idb.linktype);
+                    PcapBlockOwned::NG(Block::InterfaceDescription(idb)) => {
+                        // Remember linktype and timestamp configuration for this interface (epb.if_id maps to index here)
+                        interfaces.push(InterfaceDescription {
+                            linktype: idb.linktype,
+                            ts_resolution: idb.if_tsresol,
+                            ts_offset: idb.if_tsoffset,
+                        });
                         println!(
                             "Interface #{}: linktype={:?}, name={:?}",
-                            if_linktypes.len() - 1,
+                            interfaces.len() - 1,
                             idb.linktype,
                             idb.if_name()
                         );
@@ -35,25 +44,30 @@ pub fn parse(file_path: &str) -> HashMap<FlowKey, Flow> {
                     PcapBlockOwned::NG(Block::EnhancedPacket(ref epb)) => {
                         // Validate interface id and link type
                         let if_id = epb.if_id as usize;
-                        if if_id >= if_linktypes.len() {
+                        if if_id >= interfaces.len() {
                             println!(
                                 "Warning: EPB references unknown interface id {}, skipping",
                                 if_id
                             );
                         } else {
-                            let linktype = if_linktypes[if_id];
-                            if linktype == pcap_parser::Linktype::ETHERNET {
+                            let interface = &interfaces[if_id];
+                            if interface.linktype == pcap_parser::Linktype::ETHERNET {
                                 let epb_packet_data = epb.packet_data();
                                 // Try parsing even if truncated; parser will error if too short
-                                if (epb_packet_data.len() as u32) < epb.orig_len() {
-                                    // println!("Note: truncated packet (caplen < orig_len) in block #{}", num_blocks);
-                                }
                                 match etherparse::PacketHeaders::from_ethernet_slice(
                                     epb_packet_data,
                                 ) {
                                     Ok(headers) => {
                                         // Build a flow only when IP + TCP/UDP present
                                         let mut flow = Flow::default();
+
+                                        // Parse the timestamp from the packet using the interface data
+                                        flow.timestamp = epb.decode_ts_f64(
+                                            interface.ts_offset as u64,
+                                            interface.ts_resolution as u64,
+                                        );
+
+                                        // Extract source and destination IPs
                                         match headers.net {
                                             Some(etherparse::NetHeaders::Ipv4(ipv4, _)) => {
                                                 flow.src_ip = IPAddress::V4(ipv4.source);
@@ -68,6 +82,7 @@ pub fn parse(file_path: &str) -> HashMap<FlowKey, Flow> {
                                             }
                                         }
 
+                                        // Extract source and destination ports
                                         match headers.transport {
                                             Some(etherparse::TransportHeader::Tcp(tcp)) => {
                                                 flow.src_port = Some(tcp.source_port);
@@ -84,8 +99,9 @@ pub fn parse(file_path: &str) -> HashMap<FlowKey, Flow> {
                                             }
                                         }
 
+                                        // Create a flow key from the flow data
                                         if let Some(key) = FlowKey::try_from_flow(&flow) {
-                                            // Collect packet data per flow
+                                            // Collect packet data per flow, creating a new flow if one does not exist for this 5-tuple
                                             flows
                                                 .entry(key)
                                                 .or_insert(flow)

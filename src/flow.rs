@@ -11,19 +11,23 @@ pub enum Protocol {
     Other(u8),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Flow {
+    pub timestamp: f64,
     pub src_ip: IPAddress,
     pub dst_ip: IPAddress,
+    // TODO: Make ports required instead of optional
     pub src_port: Option<u16>,
     pub dst_port: Option<u16>,
     pub protocol: Protocol,
+    // TODO: Use Packet struct
     pub packets: Vec<Vec<u8>>,
 }
 
 impl Default for Flow {
     fn default() -> Self {
         Flow {
+            timestamp: 0.0,
             src_ip: IPAddress::V4([0, 0, 0, 0]),
             dst_ip: IPAddress::V4([0, 0, 0, 0]),
             src_port: None,
