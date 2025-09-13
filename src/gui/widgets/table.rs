@@ -1,62 +1,95 @@
-// use masonry::properties::types::Length;
-use xilem::view::{GridExt, SizedBox, grid, label, sized_box};
-use xilem::{WidgetView, palette};
+use iced::{
+    Element, Length,
+    widget::{column, container, row, text},
+};
+use std::marker::PhantomData;
 
-const GRID_GAP: f64 = 2.;
+/// Create a scrollable table widget for Iced
+pub struct IcedTable<Message> {
+    headers: Vec<String>,
+    rows: Vec<Vec<String>>,
+    column_widths: Vec<Length>,
+    _phantom: PhantomData<Message>,
+}
 
-/// Simple string table function that creates a properly aligned table
-///
-/// Creates a table where both headers and data are strings, rendered as labels.
-/// This is a convenience function for the common case of displaying string data.
-///
-/// # Arguments
-/// * `headers` - Column header labels
-/// * `data` - 2D array of string data where data[row][col] contains the cell content
-pub fn string_table<S: 'static>(headers: Vec<&str>, data: Vec<Vec<String>>) -> impl WidgetView<S> {
-    // Create all the view items for the grid
-    let mut table_items: Vec<xilem::view::GridItem<SizedBox<xilem::view::Label, S>, S, ()>> =
-        Vec::new();
+impl<Message> IcedTable<Message> {
+    pub fn new(headers: Vec<String>) -> Self {
+        let column_count = headers.len();
+        let column_widths = vec![Length::Fill; column_count];
 
-    // Build Label GridItems at the right positions for the table headers
-    for (col_index, header) in headers.iter().enumerate() {
-        table_items.push(
-            sized_box(label(*header))
-                .height(25.)
-                .padding(2.)
-                .border(palette::css::RED, 1.)
-                .grid_pos(col_index as i32, 0),
-        );
-    }
-
-    // Build Label GridItems for the data rows
-    for (row_index, row) in data.iter().enumerate() {
-        for (col_index, cell) in row.iter().enumerate() {
-            table_items.push(
-                sized_box(label(cell.as_str()))
-                    .height(25.)
-                    .padding(2.)
-                    .grid_pos(col_index as i32, (row_index as i32) + 1),
-            );
+        Self {
+            headers,
+            rows: Vec::new(),
+            column_widths,
+            _phantom: PhantomData,
         }
     }
 
-    return grid(table_items, headers.len() as i32, (data.len() + 1) as i32).spacing(GRID_GAP);
+    pub fn with_column_widths(mut self, widths: Vec<Length>) -> Self {
+        self.column_widths = widths;
+        self
+    }
+
+    pub fn add_row(mut self, row: Vec<String>) -> Self {
+        self.rows.push(row);
+        self
+    }
+
+    pub fn with_rows(mut self, rows: Vec<Vec<String>>) -> Self {
+        self.rows = rows;
+        self
+    }
 }
 
-// pub fn table_header<S: 'static>(cols: &[&str]) -> impl WidgetView<S> + use<S> {
-//     let cells = cols.iter().map(|c| label(*c)).collect::<Vec<_>>();
+impl<Message> IcedTable<Message>
+where
+    Message: 'static,
+{
+    pub fn view(self) -> Element<'static, Message> {
+        let mut table_column = column![].spacing(2);
 
-//     flex(cells).direction(Axis::Horizontal)
-// }
+        // Create header row
+        let mut header_row = row![].spacing(10).padding(10);
+        for (i, header) in self.headers.iter().enumerate() {
+            let width = self.column_widths.get(i).unwrap_or(&Length::Fill);
+            header_row = header_row.push(text(header.clone()).size(16).width(*width));
+        }
 
-// pub fn table_rows<S: 'static, R: WidgetView<S> + 'static>(
-//     rows: Vec<R>,
-// ) -> impl WidgetView<S> + use<S, R> {
-//     flex(rows).direction(Axis::Vertical)
-// }
+        // Style the header
+        let styled_header = container(header_row).padding(5);
 
-// pub fn table_row<S: 'static, C: WidgetView<S> + 'static>(
-//     cells: Vec<C>,
-// ) -> impl WidgetView<S> + use<S, C> {
-//     flex(cells).direction(Axis::Horizontal)
-// }
+        table_column = table_column.push(styled_header);
+
+        // Create data rows
+        for row_data in &self.rows {
+            let mut data_row = row![].spacing(10).padding(5);
+
+            for (i, cell) in row_data.iter().enumerate() {
+                let width = self.column_widths.get(i).unwrap_or(&Length::Fill);
+                data_row = data_row.push(text(cell.clone()).size(14).width(*width));
+            }
+
+            // Style the data row
+            let styled_row = container(data_row).padding(2);
+
+            table_column = table_column.push(styled_row);
+        }
+
+        table_column.into()
+    }
+}
+
+/// Convenience function to create a simple string table
+pub fn create_table<Message: 'static>(
+    headers: Vec<String>,
+    data: Vec<Vec<String>>,
+    column_widths: Option<Vec<Length>>,
+) -> Element<'static, Message> {
+    let mut table = IcedTable::new(headers).with_rows(data);
+
+    if let Some(widths) = column_widths {
+        table = table.with_column_widths(widths);
+    }
+
+    table.view()
+}
