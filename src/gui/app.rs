@@ -1,40 +1,47 @@
 use crate::flow::*;
+use crate::gui::widgets::{flow_table, helpers, packet_table, search_bar};
 use iced::{
     Element, Length, Task, Theme,
-    widget::{column, container, row, scrollable, text, text_input},
+    widget::{column, container, pane_grid, text},
 };
 use std::collections::HashMap;
 
+// Content for pane grid
+#[derive(Debug, Clone)]
+pub enum PaneContent {
+    FlowsTable,
+    PacketDetails,
+}
+
 // Application state
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct WirecrabApp {
     flows: HashMap<FlowKey, Flow>,
     search: String,
     filtered_flows: Vec<(FlowKey, Flow)>,
+    selected_flow: Option<FlowKey>,
+    panes: pane_grid::State<PaneContent>,
 }
 
 // Messages that the application can handle
 #[derive(Debug, Clone)]
 pub enum Message {
     SearchChanged(String),
+    FlowSelected(FlowKey),
+    PaneResized(pane_grid::ResizeEvent),
+    ClosePacketView,
 }
 
 impl WirecrabApp {
-    fn new() -> (Self, Task<Message>) {
-        let mut app = WirecrabApp {
-            flows: HashMap::new(),
-            search: String::new(),
-            filtered_flows: Vec::new(),
-        };
-        app.update_filtered_flows();
-        (app, Task::none())
-    }
-
     fn with_flows(flows: HashMap<FlowKey, Flow>) -> (Self, Task<Message>) {
+        let (panes, _) = pane_grid::State::new(PaneContent::FlowsTable);
+
         let mut app = WirecrabApp {
             flows,
             search: String::new(),
             filtered_flows: Vec::new(),
+            selected_flow: None,
+            panes,
         };
         app.update_filtered_flows();
         (app, Task::none())
@@ -45,6 +52,27 @@ impl WirecrabApp {
             Message::SearchChanged(value) => {
                 self.search = value;
                 self.update_filtered_flows();
+            }
+            Message::FlowSelected(flow_key) => {
+                self.selected_flow = Some(flow_key);
+                // Create horizontal split when a flow is selected
+                if self.panes.panes.len() == 1 {
+                    let first_pane = self.panes.panes.iter().next().map(|(id, _)| *id).unwrap();
+                    let _ = self.panes.split(
+                        pane_grid::Axis::Horizontal,
+                        first_pane,
+                        PaneContent::PacketDetails,
+                    );
+                }
+            }
+            Message::ClosePacketView => {
+                // Remove the packet details pane and clear selection
+                self.selected_flow = None;
+                // Reset panes to just the flows table
+                self.panes = pane_grid::State::new(PaneContent::FlowsTable).0;
+            }
+            Message::PaneResized(resize_event) => {
+                self.panes.resize(resize_event.split, resize_event.ratio);
             }
         }
         Task::none()
@@ -65,21 +93,37 @@ impl WirecrabApp {
                 .center_y(Length::Fill)
                 .into()
         } else {
-            // Show search bar and flows table
+            // Show search bar and pane grid with flows and packet details
             let title = text(format!(
                 "Wirecrab: {} flows loaded ({} shown)",
                 flow_count, filtered_count
             ))
             .size(20);
 
-            let search_bar = text_input("Search flows (IP, port, protocol)...", &self.search)
-                .on_input(Message::SearchChanged)
-                .padding(10)
-                .size(16);
+            let search = search_bar::search_bar(
+                "Search flows (IP, port, protocol)...",
+                &self.search,
+                Message::SearchChanged,
+            );
 
-            let flows_table = self.create_flows_table();
+            let pane_grid = pane_grid::PaneGrid::new(&self.panes, |_id, pane, _is_maximized| {
+                let content = match pane {
+                    PaneContent::FlowsTable => flow_table::flow_table(
+                        &self.filtered_flows,
+                        self.selected_flow,
+                        Message::FlowSelected,
+                    ),
+                    PaneContent::PacketDetails => {
+                        packet_table::packet_table(self.selected_flow.as_ref(), &self.flows, || {
+                            Message::ClosePacketView
+                        })
+                    }
+                };
+                pane_grid::Content::new(content)
+            })
+            .on_resize(10, Message::PaneResized);
 
-            column![title, search_bar, flows_table]
+            column![title, search, pane_grid]
                 .spacing(10)
                 .padding(10)
                 .width(Length::Fill)
@@ -99,9 +143,9 @@ impl WirecrabApp {
                 .filter(|(key, flow)| {
                     let search_lower = self.search.to_lowercase();
                     let flow_display = key.to_display().to_lowercase();
-                    let src_ip = format_ip_address(&flow.src_ip).to_lowercase();
-                    let dst_ip = format_ip_address(&flow.dst_ip).to_lowercase();
-                    let protocol = format_protocol(&flow.protocol).to_lowercase();
+                    let src_ip = helpers::format_ip_address(&flow.src_ip).to_lowercase();
+                    let dst_ip = helpers::format_ip_address(&flow.dst_ip).to_lowercase();
+                    let protocol = helpers::format_protocol(&flow.protocol).to_lowercase();
 
                     flow_display.contains(&search_lower)
                         || src_ip.contains(&search_lower)
@@ -119,65 +163,6 @@ impl WirecrabApp {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
-
-    fn create_flows_table(&self) -> Element<Message> {
-        // Create table header
-        let header = row![
-            text("Timestamp").width(Length::FillPortion(2)),
-            text("Source IP").width(Length::FillPortion(2)),
-            text("Src Port").width(Length::FillPortion(1)),
-            text("Destination IP").width(Length::FillPortion(2)),
-            text("Dst Port").width(Length::FillPortion(1)),
-            text("Protocol").width(Length::FillPortion(1)),
-            text("Packets").width(Length::FillPortion(1)),
-            text("Bytes").width(Length::FillPortion(1)),
-        ]
-        .spacing(10)
-        .padding(10);
-
-        // Create table rows
-        let mut rows = column![].spacing(2);
-
-        // Add header with styling
-        let styled_header = container(header).padding(5);
-
-        rows = rows.push(styled_header);
-
-        // Add data rows
-        for (_flow_key, flow) in &self.filtered_flows {
-            let timestamp_str = format!("{:.6}", flow.timestamp);
-            let src_ip_str = format_ip_address(&flow.src_ip);
-            let dst_ip_str = format_ip_address(&flow.dst_ip);
-            let src_port_str = flow.src_port.map_or("N/A".to_string(), |p| p.to_string());
-            let dst_port_str = flow.dst_port.map_or("N/A".to_string(), |p| p.to_string());
-            let protocol_str = format_protocol(&flow.protocol);
-            let packet_count = flow.packets.len();
-            let byte_count: usize = flow.packets.iter().map(|p| p.len()).sum();
-
-            let data_row = row![
-                text(timestamp_str).width(Length::FillPortion(2)),
-                text(src_ip_str).width(Length::FillPortion(2)),
-                text(src_port_str).width(Length::FillPortion(1)),
-                text(dst_ip_str).width(Length::FillPortion(2)),
-                text(dst_port_str).width(Length::FillPortion(1)),
-                text(protocol_str).width(Length::FillPortion(1)),
-                text(packet_count.to_string()).width(Length::FillPortion(1)),
-                text(byte_count.to_string()).width(Length::FillPortion(1)),
-            ]
-            .spacing(10)
-            .padding(5);
-
-            let styled_row = container(data_row).padding(2);
-
-            rows = rows.push(styled_row);
-        }
-
-        // Wrap in scrollable container
-        scrollable(rows)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
-    }
 }
 
 pub fn run_ui(initial_flows: HashMap<FlowKey, Flow>) -> Result<(), Box<dyn std::error::Error>> {
@@ -188,44 +173,4 @@ pub fn run_ui(initial_flows: HashMap<FlowKey, Flow>) -> Result<(), Box<dyn std::
         .theme(|_state| Theme::Dark)
         .run_with(init_fn)
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
-}
-
-fn format_timestamp(timestamp: f64) -> String {
-    // Convert to a readable format (you might want to use chrono for better formatting)
-    format!("{:.6}", timestamp)
-}
-
-fn format_ip_address(ip: &IPAddress) -> String {
-    match ip {
-        IPAddress::V4(addr) => format!("{}.{}.{}.{}", addr[0], addr[1], addr[2], addr[3]),
-        IPAddress::V6(addr) => {
-            format!(
-                "{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}",
-                addr[0],
-                addr[1],
-                addr[2],
-                addr[3],
-                addr[4],
-                addr[5],
-                addr[6],
-                addr[7],
-                addr[8],
-                addr[9],
-                addr[10],
-                addr[11],
-                addr[12],
-                addr[13],
-                addr[14],
-                addr[15]
-            )
-        }
-    }
-}
-
-fn format_protocol(protocol: &Protocol) -> String {
-    match protocol {
-        Protocol::TCP => "TCP".to_string(),
-        Protocol::UDP => "UDP".to_string(),
-        Protocol::Other(n) => format!("Proto-{}", n),
-    }
 }
