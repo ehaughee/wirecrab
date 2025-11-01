@@ -1,7 +1,9 @@
 #[cfg(feature = "ui")]
 pub mod app;
 #[cfg(feature = "ui")]
-pub mod widgets;
+pub mod assets;
+#[cfg(feature = "ui")]
+pub mod components;
 
 #[cfg(feature = "ui")]
 pub use app::run_ui;

@@ -102,11 +102,17 @@ pub fn parse(file_path: &str) -> HashMap<FlowKey, Flow> {
                                         // Create a flow key from the flow data
                                         if let Some(key) = FlowKey::try_from_flow(&flow) {
                                             // Collect packet data per flow, creating a new flow if one does not exist for this 5-tuple
-                                            flows
-                                                .entry(key)
-                                                .or_insert(flow)
-                                                .packets
-                                                .push(epb_packet_data.to_vec());
+                                            let packet = Packet {
+                                                timestamp: flow.timestamp,
+                                                src_ip: flow.src_ip,
+                                                dst_ip: flow.dst_ip,
+                                                src_port: flow.src_port,
+                                                dst_port: flow.dst_port,
+                                                length: epb_packet_data.len() as u32,
+                                                data: epb_packet_data.to_vec(),
+                                            };
+
+                                            flows.entry(key).or_insert(flow).packets.push(packet);
                                         }
                                     }
                                     Err(e) => {

@@ -136,7 +136,7 @@ impl PacketTableState {
                                 Cell::from(""),
                                 Cell::from(""),
                                 Cell::from(""),
-                                Cell::from(format!("{} bytes", packet.len())),
+                                Cell::from(format!("{} bytes", packet.data.len())),
                             ])
                             .style(Style::default().fg(Color::Gray));
                             rows.push(packet_row);
