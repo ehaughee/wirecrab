@@ -1,5 +1,8 @@
 use gpui::*;
-use gpui_component::input::{InputState, TextInput};
+use gpui_component::{
+    Icon, IconName,
+    input::{InputState, TextInput},
+};
 
 #[derive(IntoElement)]
 pub struct SearchBar {
@@ -16,8 +19,6 @@ impl SearchBar {
 
 impl RenderOnce for SearchBar {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let input = self.input_state.clone();
-
         div()
             .flex()
             .items_center()
@@ -26,17 +27,12 @@ impl RenderOnce for SearchBar {
             .bg(rgb(0x252525))
             .border_b_1()
             .border_color(rgb(0x444444))
-            .child(div().text_sm().text_color(rgb(0xcccccc)).child("Search:"))
             .child(
-                div()
-                    .flex_1()
-                    .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-                        // Focus the input when the container is clicked
-                        input.update(cx, |state, cx| {
-                            state.focus(window, cx);
-                        });
-                    })
-                    .child(TextInput::new(&self.input_state).cleanable()),
+                div().flex_1().child(
+                    TextInput::new(&self.input_state)
+                        .prefix(Icon::new(IconName::Search))
+                        .cleanable(),
+                ),
             )
     }
 }
