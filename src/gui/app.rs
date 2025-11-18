@@ -2,9 +2,10 @@ use crate::flow::*;
 use crate::gui::assets::Assets;
 use crate::gui::components::{FlowTableDelegate, PacketTableDelegate, SearchBar};
 use gpui::*;
-use gpui_component::Root;
+use gpui_component::button::Button;
 use gpui_component::input::{InputEvent, InputState};
-use gpui_component::table::{Table, TableEvent};
+use gpui_component::table::{Table, TableEvent, TableState};
+use gpui_component::{IconName, Root};
 use std::collections::HashMap;
 
 const MIN_PACKET_PANE_HEIGHT: f32 = 160.0;
@@ -21,27 +22,20 @@ struct WirecrabApp {
     filtered_view: Vec<(FlowKey, Flow)>,
     selected_flow: Option<FlowKey>,
     search_input: Entity<InputState>,
-    flow_table: Entity<Table<FlowTableDelegate>>,
-    packet_table: Option<Entity<Table<PacketTableDelegate>>>,
+    flow_table: Entity<TableState<FlowTableDelegate>>,
+    packet_table: Option<Entity<TableState<PacketTableDelegate>>>,
     packet_pane_height: f32,
     resize_state: Option<ResizeDragState>,
 }
 
 impl WirecrabApp {
     fn new(flows: HashMap<FlowKey, Flow>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let search_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search by IP or protocol..."));
+        let search_input = SearchBar::create_state(window, cx);
 
         let initial_view: Vec<(FlowKey, Flow)> =
             flows.iter().map(|(k, v)| (*k, v.clone())).collect();
 
-        let flow_table = cx.new(|cx| {
-            Table::new(
-                FlowTableDelegate::new(initial_view.clone(), None),
-                window,
-                cx,
-            )
-        });
+        let flow_table = FlowTableDelegate::create_entity(window, cx, initial_view.clone(), None);
 
         cx.subscribe_in(
             &search_input,
@@ -178,10 +172,11 @@ impl WirecrabApp {
                         table_cx.notify();
                     });
                 } else {
-                    self.packet_table =
-                        Some(cx.new(|cx| {
-                            Table::new(PacketTableDelegate::new(Some(flow)), window, cx)
-                        }));
+                    self.packet_table = Some(PacketTableDelegate::create_entity(
+                        window,
+                        cx,
+                        Some(flow.clone()),
+                    ));
                 }
             }
             None => {
@@ -223,26 +218,41 @@ impl WirecrabApp {
                         .bg(rgb(0x252525))
                         .border_b_1()
                         .border_color(rgb(0x444444))
+                        .cursor(CursorStyle::ResizeRow)
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|view, event, window, cx| {
+                                view.begin_resize(event, window, cx);
+                            }),
+                        )
                         .child(
                             div()
                                 .text_sm()
                                 .text_color(rgb(0xffffff))
-                                .child("Packet Details"),
+                                .child("Flow Packets"),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .text_color(rgb(0xaaaaaa))
                                 .child(flow_summary),
+                        )
+                        .child(
+                            Button::new("flow_close_button")
+                                .icon(IconName::WindowClose)
+                                .on_click(cx.listener(|view, _event, _window, cx| {
+                                    view.selected_flow = None;
+                                    view.packet_table = None;
+                                    cx.notify();
+                                })),
                         ),
                 )
-                .child(div().h(px(10.0)).bg(rgb(0x333333)).on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|view, event, window, cx| {
-                        view.begin_resize(event, window, cx);
-                    }),
-                ))
-                .child(div().flex_1().overflow_hidden().child(packet_table)),
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .child(Table::new(&packet_table)),
+                ),
         )
     }
 }
@@ -299,7 +309,7 @@ impl Render for WirecrabApp {
                     .flex()
                     .flex_1()
                     .overflow_hidden()
-                    .child(self.flow_table.clone()),
+                    .child(Table::new(&self.flow_table)),
             );
 
         if let Some(packet_pane) = self.render_packet_pane(window, cx) {
@@ -324,7 +334,7 @@ pub fn run_ui(initial_flows: HashMap<FlowKey, Flow>) -> Result<(), Box<dyn std::
         };
         cx.open_window(win_opts, move |window, cx| {
             let app = cx.new(|cx| WirecrabApp::new(initial_flows.clone(), window, cx));
-            cx.new(|cx| Root::new(app.into(), window, cx))
+            cx.new(move |cx| Root::new(app, window, cx))
         })
         .ok();
     });

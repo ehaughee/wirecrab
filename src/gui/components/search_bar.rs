@@ -1,7 +1,7 @@
 use gpui::*;
 use gpui_component::{
     Icon, IconName,
-    input::{InputState, TextInput},
+    input::{Input, InputState},
 };
 
 #[derive(IntoElement)]
@@ -10,6 +10,12 @@ pub struct SearchBar {
 }
 
 impl SearchBar {
+    const PLACEHOLDER: &'static str = "Search by IP or protocol...";
+    pub fn create_state<Owner>(window: &mut Window, cx: &mut Context<Owner>) -> Entity<InputState> {
+        let placeholder = SharedString::from(Self::PLACEHOLDER);
+        cx.new(move |cx| InputState::new(window, cx).placeholder(placeholder.clone()))
+    }
+
     pub fn new(input_state: &Entity<InputState>) -> Self {
         Self {
             input_state: input_state.clone(),
@@ -29,9 +35,9 @@ impl RenderOnce for SearchBar {
             .border_color(rgb(0x444444))
             .child(
                 div().flex_1().child(
-                    TextInput::new(&self.input_state)
+                    Input::new(&self.input_state)
                         .prefix(Icon::new(IconName::Search))
-                        .cleanable(),
+                        .cleanable(true),
                 ),
             )
     }

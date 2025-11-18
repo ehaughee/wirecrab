@@ -1,13 +1,12 @@
 use crate::flow::*;
 use gpui::*;
-use gpui_component::table::{Column, ColumnSort, Table, TableDelegate};
+use gpui_component::table::{Column, ColumnSort, TableDelegate, TableState};
 use std::ops::Range;
 
 pub struct FlowTableDelegate {
     pub flows: Vec<(FlowKey, Flow)>,
     pub selected_flow: Option<FlowKey>,
     pub columns: Vec<Column>,
-    pub on_select: Option<Box<dyn Fn(FlowKey) + Send + Sync>>,
 }
 
 impl FlowTableDelegate {
@@ -22,8 +21,16 @@ impl FlowTableDelegate {
                 Column::new("packets", "Packets").width(100.).sortable(),
                 Column::new("bytes", "Bytes").width(120.).sortable(),
             ],
-            on_select: None,
         }
+    }
+
+    pub fn create_entity<Owner>(
+        window: &mut Window,
+        cx: &mut Context<Owner>,
+        flows: Vec<(FlowKey, Flow)>,
+        selected_flow: Option<FlowKey>,
+    ) -> Entity<TableState<Self>> {
+        cx.new(move |cx| TableState::new(FlowTableDelegate::new(flows, selected_flow), window, cx))
     }
 }
 
@@ -45,7 +52,7 @@ impl TableDelegate for FlowTableDelegate {
         row_ix: usize,
         col_ix: usize,
         _window: &mut Window,
-        _cx: &mut Context<Table<Self>>,
+        _cx: &mut App,
     ) -> impl IntoElement {
         let (_key, flow) = &self.flows[row_ix];
         let col = &self.columns[col_ix];
@@ -65,22 +72,8 @@ impl TableDelegate for FlowTableDelegate {
         div().child(content)
     }
 
-    fn render_tr(
-        &self,
-        row_ix: usize,
-        _window: &mut Window,
-        cx: &mut Context<Table<Self>>,
-    ) -> Stateful<Div> {
-        let (key, _flow) = &self.flows[row_ix];
-        let key_copy = *key;
-
-        div()
-            .id(row_ix)
-            .on_click(cx.listener(move |view, _ev, _window, _cx| {
-                if let Some(on_select) = &view.delegate().on_select {
-                    on_select(key_copy);
-                }
-            }))
+    fn render_tr(&self, row_ix: usize, _window: &mut Window, _cx: &mut App) -> Stateful<Div> {
+        div().id(row_ix)
     }
 
     fn perform_sort(
@@ -88,7 +81,7 @@ impl TableDelegate for FlowTableDelegate {
         col_ix: usize,
         sort: ColumnSort,
         _window: &mut Window,
-        _cx: &mut Context<Table<Self>>,
+        _cx: &mut Context<TableState<Self>>,
     ) {
         let col = &self.columns[col_ix];
 
@@ -150,7 +143,7 @@ impl TableDelegate for FlowTableDelegate {
         &mut self,
         _visible_range: Range<usize>,
         _window: &mut Window,
-        _cx: &mut Context<Table<Self>>,
+        _cx: &mut Context<TableState<Self>>,
     ) {
         // Optional: can be used for lazy loading or other optimizations
     }

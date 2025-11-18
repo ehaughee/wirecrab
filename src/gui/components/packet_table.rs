@@ -1,6 +1,6 @@
 use crate::flow::{Flow, Packet};
 use gpui::*;
-use gpui_component::table::{Column, ColumnSort, Table, TableDelegate};
+use gpui_component::table::{Column, ColumnSort, TableDelegate, TableState};
 use std::ops::Range;
 
 pub struct PacketTableDelegate {
@@ -13,36 +13,26 @@ impl PacketTableDelegate {
         Self {
             packets: flow.map_or(vec![], |f| f.packets.clone()),
             columns: vec![
-                Column::new("timestamp", "Timestamp")
-                    .width(120.)
-                    .resizable(true)
-                    .sortable(),
-                Column::new("src_ip", "Source IP")
-                    .width(150.)
-                    .resizable(true)
-                    .sortable(),
-                Column::new("dst_ip", "Dest IP")
-                    .width(150.)
-                    .resizable(true)
-                    .sortable(),
-                Column::new("src_port", "Src Port")
-                    .width(100.)
-                    .resizable(true)
-                    .sortable(),
-                Column::new("dst_port", "Dst Port")
-                    .width(100.)
-                    .resizable(true)
-                    .sortable(),
-                Column::new("length", "Length")
-                    .width(100.)
-                    .resizable(true)
-                    .sortable(),
+                make_packet_col("timestamp", "Timestamp", 120.),
+                make_packet_col("src_ip", "Source IP", 150.),
+                make_packet_col("dst_ip", "Dest IP", 150.),
+                make_packet_col("src_port", "Src Port", 100.),
+                make_packet_col("dst_port", "Dst Port", 100.),
+                make_packet_col("length", "Length", 100.),
             ],
         }
     }
 
     pub fn set_flow(&mut self, flow: Option<&Flow>) {
         self.packets = flow.map_or_else(Vec::new, |f| f.packets.clone());
+    }
+
+    pub fn create_entity<Owner>(
+        window: &mut Window,
+        cx: &mut Context<Owner>,
+        flow: Option<Flow>,
+    ) -> Entity<TableState<Self>> {
+        cx.new(move |cx| TableState::new(PacketTableDelegate::new(flow.as_ref()), window, cx))
     }
 }
 
@@ -64,7 +54,7 @@ impl TableDelegate for PacketTableDelegate {
         row_ix: usize,
         col_ix: usize,
         _window: &mut Window,
-        _cx: &mut Context<Table<Self>>,
+        _cx: &mut App,
     ) -> impl IntoElement {
         let packet = &self.packets[row_ix];
         let col = &self.columns[col_ix];
@@ -93,7 +83,7 @@ impl TableDelegate for PacketTableDelegate {
         col_ix: usize,
         sort: ColumnSort,
         _window: &mut Window,
-        _cx: &mut Context<Table<Self>>,
+        _cx: &mut Context<TableState<Self>>,
     ) {
         let col = &self.columns[col_ix];
 
@@ -120,8 +110,20 @@ impl TableDelegate for PacketTableDelegate {
         &mut self,
         _visible_range: Range<usize>,
         _window: &mut Window,
-        _cx: &mut Context<Table<Self>>,
+        _cx: &mut Context<TableState<Self>>,
     ) {
         // Optional: can be used for lazy loading or other optimizations
     }
+}
+
+fn make_packet_col(
+    key: impl Into<SharedString>,
+    name: impl Into<SharedString>,
+    width: impl Into<Pixels>,
+) -> Column {
+    Column::new(key, name)
+        .width(width)
+        .sortable()
+        .movable(false)
+        .resizable(true)
 }
