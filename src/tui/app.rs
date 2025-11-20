@@ -1,18 +1,20 @@
 use std::collections::HashMap;
 use std::io::stdout;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::{execute, terminal};
-use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style, Stylize};
-use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Cell, Gauge, Paragraph, Row, Table};
+use ratatui::Terminal;
 
 use super::widgets::PacketTableState;
 use crate::flow::{Flow, FlowKey};
+use crate::loader::{LoadStatus, Loader};
 
 pub struct AppState {
     packet_table: PacketTableState,
@@ -37,19 +39,73 @@ impl AppState {
     }
 }
 
-pub fn run_tui(flows: HashMap<FlowKey, Flow>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, terminal::EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = AppState::new(flows);
+    let mut loader = Some(Loader::new(path));
+    let mut loading_progress = Some(0.0);
+    let mut error_message: Option<String> = None;
+
+    let mut app = AppState::new(HashMap::new());
     let mut last_tick = Instant::now();
-    let tick_rate = Duration::from_millis(200);
+    let tick_rate = Duration::from_millis(100);
 
     loop {
+        // Check loader
+        if let Some(l) = &loader {
+            let mut done = false;
+            while let Some(status) = l.try_recv() {
+                match status {
+                    LoadStatus::Progress(p) => loading_progress = Some(p),
+                    LoadStatus::Loaded(flows) => {
+                        app = AppState::new(flows);
+                        loading_progress = None;
+                        done = true;
+                    }
+                    LoadStatus::Error(e) => {
+                        error_message = Some(e);
+                        loading_progress = None;
+                        done = true;
+                    }
+                }
+            }
+            if done {
+                loader = None;
+            }
+        }
+
         terminal.draw(|f| {
+            if let Some(progress) = loading_progress {
+                let area = f.area();
+                let gauge_area = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(45),
+                        Constraint::Length(3),
+                        Constraint::Percentage(45),
+                    ])
+                    .split(area)[1];
+
+                let gauge = Gauge::default()
+                    .block(Block::default().borders(Borders::ALL).title("Loading PCAP"))
+                    .gauge_style(Style::default().fg(Color::Blue))
+                    .percent((progress * 100.0) as u16);
+                f.render_widget(gauge, gauge_area);
+                return;
+            }
+
+            if let Some(err) = &error_message {
+                let p = Paragraph::new(err.clone())
+                    .block(Block::default().borders(Borders::ALL).title("Error"))
+                    .style(Style::default().fg(Color::Red));
+                f.render_widget(p, f.area());
+                return;
+            }
+
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
@@ -117,7 +173,11 @@ pub fn run_tui(flows: HashMap<FlowKey, Flow>) -> Result<(), Box<dyn std::error::
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    if app.filter_mode {
+                    if loading_progress.is_some() || error_message.is_some() {
+                        if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
+                            break;
+                        }
+                    } else if app.filter_mode {
                         // Handle filter input mode
                         match key.code {
                             KeyCode::Esc => {

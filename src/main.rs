@@ -1,8 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
+use std::path::PathBuf;
 
 mod flow;
 mod gui;
+mod loader;
 mod parser;
 mod tui;
 
@@ -10,7 +12,7 @@ mod tui;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Path to the pcap file to parse
-    file_path: String,
+    file_path: PathBuf,
 
     /// Launch the Graphical User Interface
     #[arg(long)]
@@ -24,13 +26,12 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    println!("Parsing file: {}", args.file_path);
-    let flows = parser::parse(&args.file_path)?;
+    println!("Parsing file: {:?}", args.file_path);
 
     if args.ui {
         #[cfg(feature = "ui")]
         {
-            gui::run_ui(flows).map_err(|e| anyhow::anyhow!("{}", e))?;
+            gui::run_ui(args.file_path).map_err(|e| anyhow::anyhow!("{}", e))?;
         }
         #[cfg(not(feature = "ui"))]
         {
@@ -39,7 +40,7 @@ fn main() -> Result<()> {
     } else if args.tui {
         #[cfg(feature = "tui")]
         {
-            tui::run_tui(flows).map_err(|e| anyhow::anyhow!("{}", e))?;
+            tui::run_tui(args.file_path).map_err(|e| anyhow::anyhow!("{}", e))?;
         }
         #[cfg(not(feature = "tui"))]
         {

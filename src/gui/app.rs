@@ -1,12 +1,15 @@
 use crate::flow::*;
 use crate::gui::assets::Assets;
 use crate::gui::components::{FlowTableDelegate, PacketTableDelegate, SearchBar};
+use crate::loader::{LoadStatus, Loader};
 use gpui::*;
+use gpui::AsyncApp;
 use gpui_component::button::Button;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::table::{Table, TableEvent, TableState};
 use gpui_component::{IconName, Root};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 const MIN_PACKET_PANE_HEIGHT: f32 = 160.0;
 const DEFAULT_PACKET_PANE_HEIGHT: f32 = 320.0;
@@ -19,6 +22,9 @@ struct ResizeDragState {
 
 struct WirecrabApp {
     flows: HashMap<FlowKey, Flow>,
+    loader: Option<Loader>,
+    loading_progress: Option<f32>,
+    error_message: Option<String>,
     selected_flow: Option<FlowKey>,
     search_input: Entity<InputState>,
     flow_table: Entity<TableState<FlowTableDelegate>>,
@@ -28,13 +34,15 @@ struct WirecrabApp {
 }
 
 impl WirecrabApp {
-    fn new(flows: HashMap<FlowKey, Flow>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search_input = SearchBar::create_state(window, cx);
+        let loader = Loader::new(path);
 
-        let initial_view: Vec<(FlowKey, Flow)> =
-            flows.iter().map(|(k, v)| (*k, v.clone())).collect();
+        // Start with empty flows
+        let flows = HashMap::new();
+        let initial_view: Vec<(FlowKey, Flow)> = Vec::new();
 
-        let flow_table = FlowTableDelegate::create_entity(window, cx, initial_view.clone(), None);
+        let flow_table = FlowTableDelegate::create_entity(window, cx, initial_view, None);
 
         cx.subscribe_in(
             &search_input,
@@ -59,8 +67,31 @@ impl WirecrabApp {
         })
         .detach();
 
+        // Schedule the loader check loop
+        cx.spawn(|view: gpui::WeakEntity<WirecrabApp>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                loop {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(30))
+                        .await;
+                    let result = view.update(&mut cx, |app: &mut WirecrabApp, cx: &mut Context<WirecrabApp>| app.check_loader(cx));
+
+                    match result {
+                        Ok(true) => continue,
+                        _ => break,
+                    }
+                }
+                Ok::<(), anyhow::Error>(())
+            }
+        })
+        .detach();
+
         Self {
             flows,
+            loader: Some(loader),
+            loading_progress: Some(0.0),
+            error_message: None,
             selected_flow: None,
             search_input,
             flow_table,
@@ -68,6 +99,69 @@ impl WirecrabApp {
             packet_pane_height: DEFAULT_PACKET_PANE_HEIGHT,
             resize_state: None,
         }
+    }
+
+    fn check_loader(&mut self, cx: &mut Context<Self>) -> bool {
+        let mut loaded_flows = None;
+        let mut error = None;
+        let mut progress = None;
+
+        if let Some(loader) = &self.loader {
+            while let Some(status) = loader.try_recv() {
+                match status {
+                    LoadStatus::Progress(p) => progress = Some(p),
+                    LoadStatus::Loaded(flows) => {
+                        loaded_flows = Some(flows);
+                        break;
+                    }
+                    LoadStatus::Error(e) => {
+                        error = Some(e);
+                        break;
+                    }
+                }
+            }
+        } else {
+            return false;
+        }
+
+        let mut needs_notify = false;
+        let mut finished = false;
+
+        if let Some(p) = progress {
+            self.loading_progress = Some(p);
+            needs_notify = true;
+        }
+
+        if let Some(flows) = loaded_flows {
+            self.flows = flows;
+            self.loading_progress = None;
+            self.loader = None;
+            self.update_flow_table(cx);
+            needs_notify = true;
+            finished = true;
+        } else if let Some(e) = error {
+            self.error_message = Some(e);
+            self.loading_progress = None;
+            self.loader = None;
+            needs_notify = true;
+            finished = true;
+        }
+
+        if needs_notify {
+            cx.notify();
+        }
+
+        !finished
+    }
+
+    fn update_flow_table(&mut self, cx: &mut Context<Self>) {
+        let flows_vec = self.filtered_flows(cx);
+        let selected_flow = self.selected_flow;
+        self.flow_table.update(cx, move |table, _cx| {
+            let delegate = table.delegate_mut();
+            delegate.set_flows(flows_vec);
+            delegate.selected_flow = selected_flow;
+        });
     }
 
     fn select_flow(&mut self, flow_key: FlowKey) {
@@ -256,6 +350,59 @@ impl WirecrabApp {
 
 impl Render for WirecrabApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(progress) = self.loading_progress {
+            return div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .w_full()
+                .h_full()
+                .bg(rgb(0x1e1e1e))
+                .text_color(rgb(0xffffff))
+                .child(
+                    div()
+                        .text_xl()
+                        .mb_4()
+                        .child("Loading PCAP file..."),
+                )
+                .child(
+                    div()
+                        .w_64()
+                        .h_4()
+                        .bg(rgb(0x333333))
+                        .rounded_md()
+                        .child(
+                            div()
+                                .h_full()
+                                .bg(rgb(0x4a90e2))
+                                .rounded_md()
+                                .w(px(256.0 * progress)),
+                        ),
+                )
+                .child(
+                    div()
+                        .mt_2()
+                        .text_sm()
+                        .text_color(rgb(0xaaaaaa))
+                        .child(format!("{:.0}%", progress * 100.0)),
+                );
+        }
+
+        if let Some(error) = &self.error_message {
+            return div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .w_full()
+                .h_full()
+                .bg(rgb(0x1e1e1e))
+                .text_color(rgb(0xff5555))
+                .child(div().text_xl().mb_4().child("Error loading file"))
+                .child(div().text_sm().child(error.clone()));
+        }
+
         let flows_vec = self.filtered_flows(cx);
         let filtered_count = flows_vec.len();
         let selected_flow = self.selected_flow;
@@ -315,7 +462,7 @@ impl Render for WirecrabApp {
     }
 }
 
-pub fn run_ui(initial_flows: HashMap<FlowKey, Flow>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_ui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let app = Application::new().with_assets(Assets);
 
     app.run(move |cx: &mut App| {
@@ -328,7 +475,7 @@ pub fn run_ui(initial_flows: HashMap<FlowKey, Flow>) -> Result<(), Box<dyn std::
             ..Default::default()
         };
         cx.open_window(win_opts, move |window, cx| {
-            let app = cx.new(|cx| WirecrabApp::new(initial_flows.clone(), window, cx));
+            let app = cx.new(|cx| WirecrabApp::new(path.clone(), window, cx));
             cx.new(move |cx| Root::new(app, window, cx))
         })
         .ok();

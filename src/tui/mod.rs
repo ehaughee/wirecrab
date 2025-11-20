@@ -9,7 +9,7 @@ pub use app::run_tui;
 
 #[cfg(not(feature = "tui"))]
 pub fn run_tui(
-    _flows: std::collections::HashMap<crate::flow::FlowKey, crate::flow::Flow>,
+    _path: std::path::PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("TUI feature is disabled. Rebuild with --features tui to enable the Ratatui TUI.");
     Ok(())

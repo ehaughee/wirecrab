@@ -11,19 +11,29 @@ struct InterfaceDescription {
     ts_offset: i64,
 }
 
-pub fn parse(file_path: &str) -> Result<HashMap<FlowKey, Flow>> {
+pub fn parse_pcap<F>(file_path: &std::path::Path, on_progress: F) -> Result<HashMap<FlowKey, Flow>>
+where
+    F: Fn(f32),
+{
     let file = File::open(file_path).context("Failed to open file")?;
-    let mut num_blocks = 0;
+    let file_size = file.metadata()?.len();
     let mut reader = PcapNGReader::new(65536, file)
         .map_err(|e| anyhow::anyhow!(e))
         .context("Failed to create reader")?;
     let mut flows: HashMap<FlowKey, Flow> = HashMap::new();
     let mut interfaces: Vec<InterfaceDescription> = Vec::new();
+    let mut bytes_read = 0;
+    let mut last_progress_update = 0;
 
     loop {
         match reader.next() {
             Ok((offset, block)) => {
-                num_blocks += 1;
+                bytes_read += offset;
+                // Report progress every ~100KB
+                if bytes_read - last_progress_update > 100_000 {
+                     on_progress(bytes_read as f32 / file_size as f32);
+                     last_progress_update = bytes_read;
+                }
                 match block {
                     PcapBlockOwned::NG(Block::SectionHeader(ref _shb)) => {
                         // New section: reset interface tracking
@@ -198,7 +208,6 @@ pub fn parse(file_path: &str) -> Result<HashMap<FlowKey, Flow>> {
             Err(e) => eprintln!("Error while reading: {:?}", e),
         }
     }
-    println!("Total blocks: {}", num_blocks);
     // Avoid dumping all packet bytes; print a concise summary instead.
     println!("Unique flows: {}", flows.len());
     // for (key, flow) in flows.iter().take(20) {
