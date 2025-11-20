@@ -94,12 +94,19 @@ impl PacketTableState {
 
         for flow_key in &self.flow_order.clone() {
             if let Some(flow) = self.flows.get(flow_key) {
+                // Determine source (initiator) and destination
+                let (src_endpoint, dst_endpoint) = if flow.endpoints.first == flow.initiator {
+                    (flow.endpoints.first, flow.endpoints.second)
+                } else {
+                    (flow.endpoints.second, flow.endpoints.first)
+                };
+
                 // Check if this flow matches the filter
                 let timestamp_str = format_timestamp(flow.timestamp);
-                let endpoint_a_ip = format_ip_address(&flow.endpoints.first.ip);
-                let endpoint_b_ip = format_ip_address(&flow.endpoints.second.ip);
-                let endpoint_a_port = flow.endpoints.first.port.to_string();
-                let endpoint_b_port = flow.endpoints.second.port.to_string();
+                let endpoint_a_ip = format_ip_address(&src_endpoint.ip);
+                let endpoint_b_ip = format_ip_address(&dst_endpoint.ip);
+                let endpoint_a_port = src_endpoint.port.to_string();
+                let endpoint_b_port = dst_endpoint.port.to_string();
                 let protocol_str = format_protocol(&flow.protocol);
 
                 // If filter is empty or any field contains the filter text, include this flow
@@ -112,6 +119,8 @@ impl PacketTableState {
                     || protocol_str.to_lowercase().contains(&filter_lower);
 
                 if matches_filter {
+                    let total_bytes: u64 = flow.packets.iter().map(|p| p.length as u64).sum();
+
                     // Main flow row
                     let main_row = Row::new(vec![
                         Cell::from(timestamp_str),
@@ -121,6 +130,7 @@ impl PacketTableState {
                         Cell::from(endpoint_b_port),
                         Cell::from(protocol_str),
                         Cell::from(flow.packets.len().to_string()),
+                        Cell::from(total_bytes.to_string()),
                     ]);
 
                     rows.push(main_row);
@@ -128,15 +138,20 @@ impl PacketTableState {
 
                     // If expanded, add packet detail rows
                     if self.expanded_flows.contains(flow_key) {
-                        for (i, packet) in flow.packets.iter().enumerate() {
+                        for (_i, packet) in flow.packets.iter().enumerate() {
                             let packet_row = Row::new(vec![
-                                Cell::from(format!("  Packet {}", i + 1)),
+                                Cell::from(format!("  {}", format_timestamp(packet.timestamp))),
+                                Cell::from(format_ip_address(&packet.src_ip)),
+                                Cell::from(
+                                    packet.src_port.map(|p| p.to_string()).unwrap_or_default(),
+                                ),
+                                Cell::from(format_ip_address(&packet.dst_ip)),
+                                Cell::from(
+                                    packet.dst_port.map(|p| p.to_string()).unwrap_or_default(),
+                                ),
                                 Cell::from(""),
                                 Cell::from(""),
-                                Cell::from(""),
-                                Cell::from(""),
-                                Cell::from(""),
-                                Cell::from(format!("{} bytes", packet.data.len())),
+                                Cell::from(format!("{}", packet.length)),
                             ])
                             .style(Style::default().fg(Color::Gray));
                             rows.push(packet_row);
@@ -156,6 +171,7 @@ impl PacketTableState {
             Constraint::Length(8),  // Endpoint B Port
             Constraint::Length(8),  // Protocol
             Constraint::Length(8),  // Packets
+            Constraint::Length(10), // Bytes
         ];
         (rows, widths)
     }

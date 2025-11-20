@@ -6,11 +6,11 @@ use std::time::{Duration, Instant};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::{execute, terminal};
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::widgets::{Block, Borders, Cell, Gauge, Paragraph, Row, Table};
-use ratatui::Terminal;
 
 use super::widgets::PacketTableState;
 use crate::flow::{Flow, FlowKey};
@@ -144,6 +144,7 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
                 "Dst Port",
                 "Protocol",
                 "Packets",
+                "Bytes",
             ]
             .iter()
             .map(|h| Cell::from(*h).style(Style::default().add_modifier(Modifier::BOLD)));

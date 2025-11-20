@@ -2,8 +2,8 @@ use crate::flow::*;
 use crate::gui::assets::Assets;
 use crate::gui::components::{FlowTableDelegate, PacketTableDelegate, SearchBar};
 use crate::loader::{LoadStatus, Loader};
-use gpui::*;
 use gpui::AsyncApp;
+use gpui::*;
 use gpui_component::button::Button;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::table::{Table, TableEvent, TableState};
@@ -75,7 +75,10 @@ impl WirecrabApp {
                     cx.background_executor()
                         .timer(std::time::Duration::from_millis(30))
                         .await;
-                    let result = view.update(&mut cx, |app: &mut WirecrabApp, cx: &mut Context<WirecrabApp>| app.check_loader(cx));
+                    let result = view.update(
+                        &mut cx,
+                        |app: &mut WirecrabApp, cx: &mut Context<WirecrabApp>| app.check_loader(cx),
+                    );
 
                     match result {
                         Ok(true) => continue,
@@ -360,25 +363,15 @@ impl Render for WirecrabApp {
                 .h_full()
                 .bg(rgb(0x1e1e1e))
                 .text_color(rgb(0xffffff))
+                .child(div().text_xl().mb_4().child("Loading PCAP file..."))
                 .child(
-                    div()
-                        .text_xl()
-                        .mb_4()
-                        .child("Loading PCAP file..."),
-                )
-                .child(
-                    div()
-                        .w_64()
-                        .h_4()
-                        .bg(rgb(0x333333))
-                        .rounded_md()
-                        .child(
-                            div()
-                                .h_full()
-                                .bg(rgb(0x4a90e2))
-                                .rounded_md()
-                                .w(px(256.0 * progress)),
-                        ),
+                    div().w_64().h_4().bg(rgb(0x333333)).rounded_md().child(
+                        div()
+                            .h_full()
+                            .bg(rgb(0x4a90e2))
+                            .rounded_md()
+                            .w(px(256.0 * progress)),
+                    ),
                 )
                 .child(
                     div()
