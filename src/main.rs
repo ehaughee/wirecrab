@@ -1,27 +1,53 @@
+use anyhow::Result;
+use clap::Parser;
+
 mod flow;
 mod gui;
 mod parser;
 mod tui;
 
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: {} <file_path> [--ui] [--tui]", args[0]);
-        std::process::exit(1);
-    }
-    let file_path = &args[1];
-    println!("Parsing file: {}", file_path);
-    let flows = parser::parse(file_path);
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Path to the pcap file to parse
+    file_path: String,
 
-    if args.iter().any(|a| a == "--ui") {
-        // Optionally launch GUI when built with `--features ui` and user passes --ui
-        if let Err(e) = gui::run_ui(flows) {
-            eprintln!("Failed to run UI: {e:?}");
+    /// Launch the Graphical User Interface
+    #[arg(long)]
+    ui: bool,
+
+    /// Launch the Terminal User Interface
+    #[arg(long)]
+    tui: bool,
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+
+    println!("Parsing file: {}", args.file_path);
+    let flows = parser::parse(&args.file_path)?;
+
+    if args.ui {
+        #[cfg(feature = "ui")]
+        {
+            gui::run_ui(flows).map_err(|e| anyhow::anyhow!("{}", e))?;
         }
-    } else if args.iter().any(|a| a == "--tui") {
-        // Optionally launch TUI when built with `--features tui` and user passes --tui
-        if let Err(e) = tui::run_tui(flows) {
-            eprintln!("Failed to run TUI: {e:?}");
+        #[cfg(not(feature = "ui"))]
+        {
+            eprintln!("Error: UI feature is not enabled. Recompile with --features ui");
         }
+    } else if args.tui {
+        #[cfg(feature = "tui")]
+        {
+            tui::run_tui(flows).map_err(|e| anyhow::anyhow!("{}", e))?;
+        }
+        #[cfg(not(feature = "tui"))]
+        {
+            eprintln!("Error: TUI feature is not enabled. Recompile with --features tui");
+        }
+    } else {
+        println!("No UI selected. Use --ui or --tui to visualize the data.");
     }
+
+    Ok(())
 }

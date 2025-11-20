@@ -96,29 +96,29 @@ impl PacketTableState {
             if let Some(flow) = self.flows.get(flow_key) {
                 // Check if this flow matches the filter
                 let timestamp_str = format_timestamp(flow.timestamp);
-                let src_ip_str = format_ip_address(&flow.src_ip);
-                let dst_ip_str = format_ip_address(&flow.dst_ip);
-                let src_port_str = flow.src_port.map_or("N/A".to_string(), |p| p.to_string());
-                let dst_port_str = flow.dst_port.map_or("N/A".to_string(), |p| p.to_string());
+                let endpoint_a_ip = format_ip_address(&flow.endpoints.first.ip);
+                let endpoint_b_ip = format_ip_address(&flow.endpoints.second.ip);
+                let endpoint_a_port = flow.endpoints.first.port.to_string();
+                let endpoint_b_port = flow.endpoints.second.port.to_string();
                 let protocol_str = format_protocol(&flow.protocol);
 
                 // If filter is empty or any field contains the filter text, include this flow
                 let matches_filter = filter.is_empty()
                     || timestamp_str.to_lowercase().contains(&filter_lower)
-                    || src_ip_str.to_lowercase().contains(&filter_lower)
-                    || dst_ip_str.to_lowercase().contains(&filter_lower)
-                    || src_port_str.to_lowercase().contains(&filter_lower)
-                    || dst_port_str.to_lowercase().contains(&filter_lower)
+                    || endpoint_a_ip.to_lowercase().contains(&filter_lower)
+                    || endpoint_b_ip.to_lowercase().contains(&filter_lower)
+                    || endpoint_a_port.to_lowercase().contains(&filter_lower)
+                    || endpoint_b_port.to_lowercase().contains(&filter_lower)
                     || protocol_str.to_lowercase().contains(&filter_lower);
 
                 if matches_filter {
                     // Main flow row
                     let main_row = Row::new(vec![
                         Cell::from(timestamp_str),
-                        Cell::from(src_ip_str),
-                        Cell::from(src_port_str),
-                        Cell::from(dst_ip_str),
-                        Cell::from(dst_port_str),
+                        Cell::from(endpoint_a_ip),
+                        Cell::from(endpoint_a_port),
+                        Cell::from(endpoint_b_ip),
+                        Cell::from(endpoint_b_port),
                         Cell::from(protocol_str),
                         Cell::from(flow.packets.len().to_string()),
                     ]);
@@ -150,10 +150,10 @@ impl PacketTableState {
         self.row_to_flow_map = row_to_flow_map;
         let widths = vec![
             Constraint::Length(20), // Timestamp
-            Constraint::Length(15), // Src IP
-            Constraint::Length(8),  // Src Port
-            Constraint::Length(15), // Dst IP
-            Constraint::Length(8),  // Dst Port
+            Constraint::Length(15), // Endpoint A IP
+            Constraint::Length(8),  // Endpoint A Port
+            Constraint::Length(15), // Endpoint B IP
+            Constraint::Length(8),  // Endpoint B Port
             Constraint::Length(8),  // Protocol
             Constraint::Length(8),  // Packets
         ];

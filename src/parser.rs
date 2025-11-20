@@ -1,4 +1,5 @@
 use crate::flow::*;
+use anyhow::{Context, Result};
 use pcap_parser::traits::{PcapNGPacketBlock, PcapReaderIterator};
 use pcap_parser::*;
 use std::collections::HashMap;
@@ -10,11 +11,12 @@ struct InterfaceDescription {
     ts_offset: i64,
 }
 
-pub fn parse(file_path: &str) -> HashMap<FlowKey, Flow> {
-    // TODO: Return a result from parse and handle errors in main instead of panicking
-    let file = File::open(file_path).expect("Failed to open file");
+pub fn parse(file_path: &str) -> Result<HashMap<FlowKey, Flow>> {
+    let file = File::open(file_path).context("Failed to open file")?;
     let mut num_blocks = 0;
-    let mut reader = PcapNGReader::new(65536, file).expect("Failed to create reader");
+    let mut reader = PcapNGReader::new(65536, file)
+        .map_err(|e| anyhow::anyhow!(e))
+        .context("Failed to create reader")?;
     let mut flows: HashMap<FlowKey, Flow> = HashMap::new();
     let mut interfaces: Vec<InterfaceDescription> = Vec::new();
 
@@ -58,61 +60,95 @@ pub fn parse(file_path: &str) -> HashMap<FlowKey, Flow> {
                                     epb_packet_data,
                                 ) {
                                     Ok(headers) => {
-                                        // Build a flow only when IP + TCP/UDP present
-                                        let mut flow = Flow::default();
-
-                                        // Parse the timestamp from the packet using the interface data
-                                        flow.timestamp = epb.decode_ts_f64(
+                                        // Parse packet metadata first; only build a flow when IP + TCP/UDP present
+                                        let timestamp = epb.decode_ts_f64(
                                             interface.ts_offset as u64,
                                             interface.ts_resolution as u64,
                                         );
 
+                                        let mut src_ip = None;
+                                        let mut dst_ip = None;
+
                                         // Extract source and destination IPs
                                         match headers.net {
                                             Some(etherparse::NetHeaders::Ipv4(ipv4, _)) => {
-                                                flow.src_ip = IPAddress::V4(ipv4.source);
-                                                flow.dst_ip = IPAddress::V4(ipv4.destination);
+                                                src_ip = Some(IPAddress::V4(ipv4.source));
+                                                dst_ip = Some(IPAddress::V4(ipv4.destination));
                                             }
                                             Some(etherparse::NetHeaders::Ipv6(ipv6, _)) => {
-                                                flow.src_ip = IPAddress::V6(ipv6.source);
-                                                flow.dst_ip = IPAddress::V6(ipv6.destination);
+                                                src_ip = Some(IPAddress::V6(ipv6.source));
+                                                dst_ip = Some(IPAddress::V6(ipv6.destination));
                                             }
                                             _ => {
                                                 // Non-IP
                                             }
                                         }
 
+                                        let mut src_port = None;
+                                        let mut dst_port = None;
+                                        let mut protocol = None;
+                                        let mut is_syn = false;
+                                        let mut is_ack = false;
+
                                         // Extract source and destination ports
                                         match headers.transport {
                                             Some(etherparse::TransportHeader::Tcp(tcp)) => {
-                                                flow.src_port = Some(tcp.source_port);
-                                                flow.dst_port = Some(tcp.destination_port);
-                                                flow.protocol = Protocol::TCP;
+                                                src_port = Some(tcp.source_port);
+                                                dst_port = Some(tcp.destination_port);
+                                                protocol = Some(Protocol::TCP);
+                                                is_syn = tcp.syn;
+                                                is_ack = tcp.ack;
                                             }
                                             Some(etherparse::TransportHeader::Udp(udp)) => {
-                                                flow.src_port = Some(udp.source_port);
-                                                flow.dst_port = Some(udp.destination_port);
-                                                flow.protocol = Protocol::UDP;
+                                                src_port = Some(udp.source_port);
+                                                dst_port = Some(udp.destination_port);
+                                                protocol = Some(Protocol::UDP);
                                             }
                                             _ => {
                                                 // Not TCP/UDP
                                             }
                                         }
 
-                                        // Create a flow key from the flow data
-                                        if let Some(key) = FlowKey::try_from_flow(&flow) {
+                                        if let (
+                                            Some(src_ip),
+                                            Some(dst_ip),
+                                            Some(src_port),
+                                            Some(dst_port),
+                                            Some(protocol),
+                                        ) = (src_ip, dst_ip, src_port, dst_port, protocol)
+                                        {
+                                            let src_ep = Endpoint::new(src_ip, src_port);
+                                            let dst_ep = Endpoint::new(dst_ip, dst_port);
+                                            let endpoints = FlowEndpoints::new(src_ep, dst_ep);
+                                            let key = FlowKey {
+                                                endpoints,
+                                                protocol,
+                                            };
+
                                             // Collect packet data per flow, creating a new flow if one does not exist for this 5-tuple
                                             let packet = Packet {
-                                                timestamp: flow.timestamp,
-                                                src_ip: flow.src_ip,
-                                                dst_ip: flow.dst_ip,
-                                                src_port: flow.src_port,
-                                                dst_port: flow.dst_port,
+                                                timestamp,
+                                                src_ip,
+                                                dst_ip,
+                                                src_port: Some(src_port),
+                                                dst_port: Some(dst_port),
                                                 length: epb_packet_data.len() as u32,
                                                 data: epb_packet_data.to_vec(),
                                             };
 
-                                            flows.entry(key).or_insert(flow).packets.push(packet);
+                                            let flow = flows.entry(key).or_insert_with(|| Flow {
+                                                timestamp,
+                                                protocol,
+                                                endpoints,
+                                                initiator: src_ep,
+                                                packets: Vec::new(),
+                                            });
+
+                                            if protocol == Protocol::TCP && is_syn && !is_ack {
+                                                flow.initiator = src_ep;
+                                            }
+
+                                            flow.packets.push(packet);
                                         }
                                     }
                                     Err(e) => {
@@ -178,5 +214,5 @@ pub fn parse(file_path: &str) -> HashMap<FlowKey, Flow> {
     //     println!("... {} more flows not shown", flows.len() - 20);
     // }
 
-    return flows;
+    return Ok(flows);
 }

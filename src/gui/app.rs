@@ -19,7 +19,6 @@ struct ResizeDragState {
 
 struct WirecrabApp {
     flows: HashMap<FlowKey, Flow>,
-    filtered_view: Vec<(FlowKey, Flow)>,
     selected_flow: Option<FlowKey>,
     search_input: Entity<InputState>,
     flow_table: Entity<TableState<FlowTableDelegate>>,
@@ -48,9 +47,11 @@ impl WirecrabApp {
         )
         .detach();
 
-        cx.subscribe_in(&flow_table, window, |view, _table, event, _window, cx| {
+        cx.subscribe_in(&flow_table, window, |view, table, event, _window, cx| {
             if let TableEvent::SelectRow(row_ix) = event {
-                if let Some((key, _flow)) = view.filtered_view.get(*row_ix) {
+                let table_state = table.read(cx);
+                let delegate = table_state.delegate();
+                if let Some((key, _flow)) = delegate.flows.get(*row_ix) {
                     view.select_flow(*key);
                     cx.notify();
                 }
@@ -60,7 +61,6 @@ impl WirecrabApp {
 
         Self {
             flows,
-            filtered_view: initial_view,
             selected_flow: None,
             search_input,
             flow_table,
@@ -87,15 +87,10 @@ impl WirecrabApp {
             self.flows
                 .iter()
                 .filter(|(_, flow)| {
-                    flow.src_ip
-                        .to_string()
-                        .to_lowercase()
-                        .contains(&search_text)
-                        || flow
-                            .dst_ip
-                            .to_string()
-                            .to_lowercase()
-                            .contains(&search_text)
+                    let endpoints = [flow.endpoints.first, flow.endpoints.second];
+                    endpoints
+                        .iter()
+                        .any(|endpoint| Self::endpoint_matches(*endpoint, &search_text))
                         || format!("{:?}", flow.protocol)
                             .to_lowercase()
                             .contains(&search_text)
@@ -103,6 +98,11 @@ impl WirecrabApp {
                 .map(|(k, v)| (*k, v.clone()))
                 .collect()
         }
+    }
+
+    fn endpoint_matches(endpoint: Endpoint, needle: &str) -> bool {
+        endpoint.to_string().to_lowercase().contains(needle)
+            || endpoint.port.to_string().contains(needle)
     }
 
     fn begin_resize(
@@ -195,10 +195,7 @@ impl WirecrabApp {
             .clamp(MIN_PACKET_PANE_HEIGHT, max_height);
 
         let selected_flow = self.current_flow()?;
-        let flow_summary = format!(
-            "{} -> {} ({:?})",
-            selected_flow.src_ip, selected_flow.dst_ip, selected_flow.protocol
-        );
+        let flow_summary = format!("{} ({:?})", selected_flow.endpoints, selected_flow.protocol);
 
         Some(
             div()
@@ -263,11 +260,9 @@ impl Render for WirecrabApp {
         let filtered_count = flows_vec.len();
         let selected_flow = self.selected_flow;
 
-        self.filtered_view = flows_vec.clone();
-
         self.flow_table.update(cx, move |table, _cx| {
             let delegate = table.delegate_mut();
-            delegate.flows = flows_vec;
+            delegate.set_flows(flows_vec);
             delegate.selected_flow = selected_flow;
         });
 
