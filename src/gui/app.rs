@@ -340,20 +340,7 @@ impl Render for WirecrabApp {
         let current_flow = self.current_flow().cloned();
         self.sync_packet_table(current_flow.as_ref(), window, cx);
 
-        let mut container = v_resizable("main_split")
-            .with_state(&self.resizable_state)
-            .child(
-                resizable_panel()
-                    .size(px(DEFAULT_PACKET_PANE_HEIGHT))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .size_full()
-                            .bg(rgb(0x1e1e1e))
-                            .text_color(rgb(0xffffff))
-                            .child(
-                                div()
+        let header = div()
                                     .text_xl()
                                     .p_1()
                                     .bg(rgb(0x252525))
@@ -362,29 +349,20 @@ impl Render for WirecrabApp {
                                     .child(format!(
                                         "Wirecrab: {} flows ({} shown)",
                                         total_flows, filtered_count
-                                    )),
-                            )
-                            .child(SearchBar::new(&self.search_input))
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_1()
-                                    .overflow_hidden()
-                                    .child(Table::new(&self.flow_table)),
-                            ),
-                    ),
-            );
+            ))
+            .child(SearchBar::new(&self.search_input));
+
+        let main = Table::new(&self.flow_table);
+
+        let mut layout = Layout::new(self.resizable_state.clone())
+            .header(header)
+            .main(main);
 
         if let Some(packet_pane) = self.render_packet_pane_content(cx) {
-            container = container.child(
-                resizable_panel()
-                    .size(px(DEFAULT_PACKET_PANE_HEIGHT))
-                    .size_range(px(MIN_PACKET_PANE_HEIGHT)..px(f32::MAX))
-                    .child(packet_pane),
-            );
+            layout = layout.bottom(packet_pane);
         }
 
-        div().size_full().child(container)
+        div().child(layout)
     }
 }
 

@@ -4,6 +4,8 @@ pub mod app;
 pub mod assets;
 #[cfg(feature = "ui")]
 pub mod components;
+#[cfg(feature = "ui")]
+pub mod layout;
 
 #[cfg(feature = "ui")]
 pub use app::run_ui;
