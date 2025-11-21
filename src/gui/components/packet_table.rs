@@ -1,8 +1,8 @@
 use crate::flow::{Flow, Packet};
 use gpui::*;
-use gpui_component::IconName;
 use gpui_component::button::Button;
 use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
+use gpui_component::{IconName, StyledExt};
 use std::ops::Range;
 
 #[derive(IntoElement)]
@@ -50,7 +50,8 @@ impl RenderOnce for PacketPane {
                     .border_color(rgb(0x444444))
                     .child(
                         div()
-                            .text_sm()
+                            .text_lg()
+                            .font_bold()
                             .text_color(rgb(0xffffff))
                             .child("Flow Packets"),
                     )
@@ -89,12 +90,12 @@ impl PacketTableDelegate {
             columns: vec![
                 make_packet_col("timestamp", "Timestamp", 120.),
                 make_packet_col("src_ip", "Source IP", 150.),
-                make_packet_col("dst_ip", "Dest IP", 150.),
                 make_packet_col("src_port", "Src Port", 100.),
+                make_packet_col("dst_ip", "Dest IP", 150.),
                 make_packet_col("dst_port", "Dst Port", 100.),
-                make_packet_col("length", "Length", 100.),
+                make_packet_col("size", "Size", 100.),
             ],
-            active_sort: None,
+            active_sort: Some((0, ColumnSort::Ascending)),
             start_timestamp,
         }
     }
@@ -143,7 +144,7 @@ impl PacketTableDelegate {
                 ColumnSort::Descending => self.packets.sort_by(|a, b| b.dst_port.cmp(&a.dst_port)),
                 ColumnSort::Default => {}
             },
-            "length" => match sort {
+            "size" => match sort {
                 ColumnSort::Ascending => self.packets.sort_by(|a, b| a.length.cmp(&b.length)),
                 ColumnSort::Descending => self.packets.sort_by(|a, b| b.length.cmp(&a.length)),
                 ColumnSort::Default => {}
