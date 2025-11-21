@@ -245,7 +245,7 @@ impl WirecrabApp {
                         .items_center()
                         .justify_between()
                         .gap_2()
-                        .p_2()
+                        .p_1()
                         .bg(rgb(0x252525))
                         .border_b_1()
                         .border_color(rgb(0x444444))
@@ -346,38 +346,39 @@ impl Render for WirecrabApp {
                 resizable_panel()
                     .size(px(DEFAULT_PACKET_PANE_HEIGHT))
                     .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .size_full()
-                        .bg(rgb(0x1e1e1e))
-                        .text_color(rgb(0xffffff))
-                        .child(
-                            div()
-                                .text_xl()
-                                .p_1()
-                                .bg(rgb(0x252525))
-                                .border_b_1()
-                                .border_color(rgb(0x444444))
-                                .child(format!(
-                                    "Wirecrab: {} flows ({} shown)",
-                                    total_flows, filtered_count
-                                )),
-                        )
-                        .child(SearchBar::new(&self.search_input))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_1()
-                                .overflow_hidden()
-                                .child(Table::new(&self.flow_table)),
-                        ),
-                ),
+                        div()
+                            .flex()
+                            .flex_col()
+                            .size_full()
+                            .bg(rgb(0x1e1e1e))
+                            .text_color(rgb(0xffffff))
+                            .child(
+                                div()
+                                    .text_xl()
+                                    .p_2()
+                                    .bg(rgb(0x252525))
+                                    .border_b_1()
+                                    .border_color(rgb(0x444444))
+                                    .child(format!(
+                                        "Wirecrab: {} flows ({} shown)",
+                                        total_flows, filtered_count
+                                    )),
+                            )
+                            .child(SearchBar::new(&self.search_input))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_1()
+                                    .overflow_hidden()
+                                    .child(Table::new(&self.flow_table)),
+                            ),
+                    ),
             );
 
         if let Some(packet_pane) = self.render_packet_pane_content(cx) {
             container = container.child(
                 resizable_panel()
+                    .size(px(DEFAULT_PACKET_PANE_HEIGHT))
                     .size_range(px(MIN_PACKET_PANE_HEIGHT)..px(f32::MAX))
                     .child(packet_pane),
             );
