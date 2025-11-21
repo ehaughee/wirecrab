@@ -133,6 +133,13 @@ impl TableDelegate for PacketTableDelegate {
         _cx: &mut Context<TableState<Self>>,
     ) {
         self.active_sort = Some((col_ix, sort));
+        for (i, col) in self.columns.iter_mut().enumerate() {
+            if i == col_ix {
+                col.sort = Some(sort);
+            } else {
+                col.sort = Some(ColumnSort::Default);
+            }
+        }
         self.sort_data(col_ix, sort);
     }
 
