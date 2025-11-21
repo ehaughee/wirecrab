@@ -6,21 +6,15 @@ use gpui::AsyncApp;
 use gpui::*;
 use gpui_component::button::Button;
 use gpui_component::input::{InputEvent, InputState};
+use gpui_component::resizable::{ResizableState, resizable_panel, v_resizable};
 use gpui_component::table::{Table, TableEvent, TableState};
 use gpui_component::{IconName, Root};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-const MIN_PACKET_PANE_HEIGHT: f32 = 160.0;
 const DEFAULT_PACKET_PANE_HEIGHT: f32 = 320.0;
-const MIN_FLOW_REGION_HEIGHT: f32 = 200.0;
 
-struct ResizeDragState {
-    start_height: f32,
-    start_mouse_y: f32,
-}
-
-struct WirecrabApp {
+pub struct WirecrabApp {
     flows: HashMap<FlowKey, Flow>,
     loader: Option<Loader>,
     loading_progress: Option<f32>,
@@ -29,14 +23,14 @@ struct WirecrabApp {
     search_input: Entity<InputState>,
     flow_table: Entity<TableState<FlowTableDelegate>>,
     packet_table: Option<Entity<TableState<PacketTableDelegate>>>,
-    packet_pane_height: f32,
-    resize_state: Option<ResizeDragState>,
+    resizable_state: Entity<ResizableState>,
 }
 
 impl WirecrabApp {
     fn new(path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search_input = SearchBar::create_state(window, cx);
         let loader = Loader::new(path);
+        let resizable_state = cx.new(|_| ResizableState::default());
 
         // Start with empty flows
         let flows = HashMap::new();
@@ -99,8 +93,7 @@ impl WirecrabApp {
             search_input,
             flow_table,
             packet_table: None,
-            packet_pane_height: DEFAULT_PACKET_PANE_HEIGHT,
-            resize_state: None,
+            resizable_state,
         }
     }
 
@@ -202,57 +195,6 @@ impl WirecrabApp {
             || endpoint.port.to_string().contains(needle)
     }
 
-    fn begin_resize(
-        &mut self,
-        event: &MouseDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if event.button != MouseButton::Left {
-            return;
-        }
-
-        let mouse_y: f32 = event.position.y.into();
-        self.resize_state = Some(ResizeDragState {
-            start_height: self.packet_pane_height,
-            start_mouse_y: mouse_y,
-        });
-
-        window.prevent_default();
-        cx.notify();
-    }
-
-    fn update_resize(
-        &mut self,
-        event: &MouseMoveEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(state) = &self.resize_state {
-            if !event.dragging() {
-                self.resize_state = None;
-                return;
-            }
-
-            let mouse_y: f32 = event.position.y.into();
-            let delta = state.start_mouse_y - mouse_y;
-            let viewport_height: f32 = window.viewport_size().height.into();
-            let max_height = (viewport_height - MIN_FLOW_REGION_HEIGHT).max(MIN_PACKET_PANE_HEIGHT);
-            let new_height = (state.start_height + delta).clamp(MIN_PACKET_PANE_HEIGHT, max_height);
-
-            if (new_height - self.packet_pane_height).abs() > 0.5 {
-                self.packet_pane_height = new_height;
-                cx.notify();
-            }
-        }
-    }
-
-    fn end_resize(&mut self, event: &MouseUpEvent) {
-        if event.button == MouseButton::Left {
-            self.resize_state = None;
-        }
-    }
-
     fn sync_packet_table(
         &mut self,
         selected_flow: Option<&Flow>,
@@ -278,19 +220,12 @@ impl WirecrabApp {
             }
             None => {
                 self.packet_table = None;
-                self.resize_state = None;
             }
         }
     }
 
-    fn render_packet_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<Div> {
+    fn render_packet_pane_content(&mut self, cx: &mut Context<Self>) -> Option<Div> {
         let packet_table = self.packet_table.clone()?;
-        let viewport_height: f32 = window.viewport_size().height.into();
-        let max_height = (viewport_height - MIN_FLOW_REGION_HEIGHT).max(MIN_PACKET_PANE_HEIGHT);
-        self.packet_pane_height = self
-            .packet_pane_height
-            .clamp(MIN_PACKET_PANE_HEIGHT, max_height);
-
         let selected_flow = self.current_flow()?;
         let flow_summary = format!("{} ({:?})", selected_flow.endpoints, selected_flow.protocol);
 
@@ -301,7 +236,7 @@ impl WirecrabApp {
                 .bg(rgb(0x202020))
                 .border_t_1()
                 .border_color(rgb(0x444444))
-                .h(px(self.packet_pane_height))
+                .size_full()
                 .child(
                     div()
                         .flex()
@@ -312,13 +247,6 @@ impl WirecrabApp {
                         .bg(rgb(0x252525))
                         .border_b_1()
                         .border_color(rgb(0x444444))
-                        .cursor(CursorStyle::ResizeRow)
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|view, event, window, cx| {
-                                view.begin_resize(event, window, cx);
-                            }),
-                        )
                         .child(
                             div()
                                 .text_sm()
@@ -410,48 +338,49 @@ impl Render for WirecrabApp {
         let current_flow = self.current_flow().cloned();
         self.sync_packet_table(current_flow.as_ref(), window, cx);
 
-        let mut container = div()
-            .flex()
-            .flex_col()
-            .w_full()
-            .h_full()
-            .bg(rgb(0x1e1e1e))
-            .text_color(rgb(0xffffff))
-            .on_mouse_move(cx.listener(|view, event, window, cx| {
-                view.update_resize(event, window, cx);
-            }))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|view, event, _window, _cx| {
-                    view.end_resize(event);
-                }),
-            )
+        let mut container = v_resizable("main_split")
+            .with_state(&self.resizable_state)
             .child(
-                div()
-                    .text_xl()
-                    .p_2()
-                    .bg(rgb(0x252525))
-                    .border_b_1()
-                    .border_color(rgb(0x444444))
-                    .child(format!(
-                        "Wirecrab: {} flows loaded ({} shown)",
-                        total_flows, filtered_count
-                    )),
-            )
-            .child(SearchBar::new(&self.search_input))
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .overflow_hidden()
-                    .child(Table::new(&self.flow_table)),
+                resizable_panel().child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .w_full()
+                        .h_full()
+                        .bg(rgb(0x1e1e1e))
+                        .text_color(rgb(0xffffff))
+                        .child(
+                            div()
+                                .text_xl()
+                                .p_2()
+                                .bg(rgb(0x252525))
+                                .border_b_1()
+                                .border_color(rgb(0x444444))
+                                .child(format!(
+                                    "Wirecrab: {} flows loaded ({} shown)",
+                                    total_flows, filtered_count
+                                )),
+                        )
+                        .child(SearchBar::new(&self.search_input))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_1()
+                                .overflow_hidden()
+                                .child(Table::new(&self.flow_table)),
+                        ),
+                ),
             );
 
-        if let Some(packet_pane) = self.render_packet_pane(window, cx) {
-            container = container.child(packet_pane);
+        if let Some(packet_pane) = self.render_packet_pane_content(cx) {
+            container = container.child(
+                resizable_panel()
+                    .size(px(DEFAULT_PACKET_PANE_HEIGHT))
+                    .child(packet_pane),
+            );
         }
 
-        container
+        div().size_full().child(container)
     }
 }
 
