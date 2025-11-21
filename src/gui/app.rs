@@ -355,7 +355,7 @@ impl Render for WirecrabApp {
                             .child(
                                 div()
                                     .text_xl()
-                                    .p_2()
+                                    .p_1()
                                     .bg(rgb(0x252525))
                                     .border_b_1()
                                     .border_color(rgb(0x444444))
