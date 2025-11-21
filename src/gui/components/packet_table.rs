@@ -1,35 +1,71 @@
 use crate::flow::{Flow, Packet};
 use gpui::*;
-use gpui_component::button::Button;
 use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
-use gpui_component::{ActiveTheme, IconName, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use std::ops::Range;
 
-#[derive(IntoElement)]
-pub struct PacketPane {
-    table: Entity<TableState<PacketTableDelegate>>,
+#[derive(IntoElement, Clone)]
+pub struct PacketTable {
+    state: Entity<TableState<PacketTableDelegate>>,
     flow: Flow,
-    on_close: Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>,
 }
 
-impl PacketPane {
-    pub fn new(
-        table: Entity<TableState<PacketTableDelegate>>,
-        flow: Flow,
-        on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+impl PacketTable {
+    pub fn create<Owner>(
+        window: &mut Window,
+        cx: &mut Context<Owner>,
+        flow: &Flow,
+        start_timestamp: Option<f64>,
     ) -> Self {
+        let state =
+            PacketTableDelegate::create_entity(window, cx, Some(flow.clone()), start_timestamp);
         Self {
-            table,
-            flow,
-            on_close: Box::new(on_close),
+            state,
+            flow: flow.clone(),
         }
+    }
+
+    pub fn update(&mut self, flow: &Flow, start_timestamp: Option<f64>, cx: &mut App) {
+        self.flow = flow.clone();
+        self.state.update(cx, move |table, cx| {
+            let delegate = table.delegate_mut();
+            delegate.set_flow(Some(&flow));
+            delegate.set_start_timestamp(start_timestamp);
+            table.refresh(cx);
+            cx.notify();
+        });
+    }
+
+    pub fn entity(&self) -> &Entity<TableState<PacketTableDelegate>> {
+        &self.state
+    }
+
+    pub fn pane_header(flow: &Flow, cx: &App) -> AnyElement {
+        let flow_summary = flow.to_string();
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(
+                div()
+                    .text_lg()
+                    .font_bold()
+                    .text_color(cx.theme().colors.foreground)
+                    .child("Flow Packets"),
+            )
+            .child(
+                div()
+                    .flex_grow()
+                    .text_sm()
+                    .text_color(cx.theme().colors.muted_foreground)
+                    .child(flow_summary),
+            )
+            .into_any_element()
     }
 }
 
-impl RenderOnce for PacketPane {
+impl RenderOnce for PacketTable {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let flow_summary = self.flow.to_string();
-
         div()
             .flex()
             .flex_col()
@@ -39,42 +75,12 @@ impl RenderOnce for PacketPane {
             .size_full()
             .child(
                 div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_2()
-                    .py_1()
-                    .px_2()
-                    .bg(cx.theme().colors.popover)
-                    .border_b_1()
-                    .border_color(cx.theme().colors.border)
-                    .child(
-                        div()
-                            .text_lg()
-                            .font_bold()
-                            .text_color(cx.theme().colors.foreground)
-                            .child("Flow Packets"),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().colors.muted_foreground)
-                            .child(flow_summary),
-                    )
-                    .child(
-                        Button::new("flow_close_button")
-                            .icon(IconName::WindowClose)
-                            .on_click(self.on_close),
-                    ),
-            )
-            .child(
-                div()
-                    .flex_1()
+                    .size_full()
                     .overflow_hidden()
                     .rounded_none()
                     .border_1()
                     .border_color(cx.theme().colors.border)
-                    .child(Table::new(&self.table).bordered(false)),
+                    .child(Table::new(&self.state).bordered(false)),
             )
     }
 }
@@ -91,7 +97,7 @@ impl PacketTableDelegate {
         Self {
             packets: flow.map_or(vec![], |f| f.packets.clone()),
             columns: vec![
-                make_packet_col("timestamp", "Timestamp", 120.),
+                make_packet_col("timestamp", "Timestamp", 110.),
                 make_packet_col("src_ip", "Source IP", 150.),
                 make_packet_col("src_port", "Src Port", 100.),
                 make_packet_col("dst_ip", "Dest IP", 150.),
@@ -213,7 +219,7 @@ impl TableDelegate for PacketTableDelegate {
                 .dst_port
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| "-".to_string()),
-            "length" => packet.length.to_string(),
+            "size" => packet.length.to_string(),
             _ => String::new(),
         };
 

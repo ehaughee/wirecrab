@@ -4,22 +4,23 @@ use gpui_component::{
     input::{Input, InputState},
 };
 
-#[derive(IntoElement)]
+#[derive(IntoElement, Clone)]
 pub struct SearchBar {
     input_state: Entity<InputState>,
 }
 
 impl SearchBar {
     const PLACEHOLDER: &'static str = "Search by IP or protocol...";
-    pub fn create_state<Owner>(window: &mut Window, cx: &mut Context<Owner>) -> Entity<InputState> {
+
+    pub fn create<Owner>(window: &mut Window, cx: &mut Context<Owner>) -> Self {
         let placeholder = SharedString::from(Self::PLACEHOLDER);
-        cx.new(move |cx| InputState::new(window, cx).placeholder(placeholder.clone()))
+        let input_state =
+            cx.new(move |cx| InputState::new(window, cx).placeholder(placeholder.clone()));
+        Self { input_state }
     }
 
-    pub fn new(input_state: &Entity<InputState>) -> Self {
-        Self {
-            input_state: input_state.clone(),
-        }
+    pub fn entity(&self) -> &Entity<InputState> {
+        &self.input_state
     }
 }
 
@@ -29,7 +30,7 @@ impl RenderOnce for SearchBar {
             .flex()
             .items_center()
             .p_1()
-            .bg(cx.theme().colors.popover)
+            .bg(cx.theme().colors.secondary)
             .border_b_1()
             .border_color(cx.theme().colors.border)
             .child(

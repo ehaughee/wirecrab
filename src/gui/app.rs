@@ -1,14 +1,15 @@
 use crate::flow::*;
 use crate::gui::assets::Assets;
-use crate::gui::components::{FlowTableDelegate, PacketPane, PacketTableDelegate, SearchBar};
+use crate::gui::components::{FlowTable, PacketTable, SearchBar};
+
 use crate::gui::layout::Layout;
 use crate::loader::{LoadStatus, Loader};
 use gpui::AsyncApp;
 use gpui::*;
-use gpui_component::input::{InputEvent, InputState};
+use gpui_component::input::InputEvent;
 use gpui_component::progress::Progress;
 use gpui_component::resizable::ResizableState;
-use gpui_component::table::{Table, TableEvent, TableState};
+use gpui_component::table::TableEvent;
 use gpui_component::{ActiveTheme, Root};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -20,16 +21,16 @@ pub struct WirecrabApp {
     loading_progress: Option<f32>,
     error_message: Option<String>,
     selected_flow: Option<FlowKey>,
-    search_input: Entity<InputState>,
-    flow_table: Entity<TableState<FlowTableDelegate>>,
-    packet_table: Option<Entity<TableState<PacketTableDelegate>>>,
+    search_bar: SearchBar,
+    flow_table: FlowTable,
+    packet_table: Option<PacketTable>,
     resizable_state: Entity<ResizableState>,
     start_timestamp: Option<f64>,
 }
 
 impl WirecrabApp {
     fn new(path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let search_input = SearchBar::create_state(window, cx);
+        let search_bar = SearchBar::create(window, cx);
         let loader = Loader::new(path.clone());
         let resizable_state = cx.new(|_| ResizableState::default());
 
@@ -37,10 +38,10 @@ impl WirecrabApp {
         let flows = HashMap::new();
         let initial_view: Vec<(FlowKey, Flow)> = Vec::new();
 
-        let flow_table = FlowTableDelegate::create_entity(window, cx, initial_view, None, None);
+        let flow_table = FlowTable::create(window, cx, initial_view, None, None);
 
         cx.subscribe_in(
-            &search_input,
+            search_bar.entity(),
             window,
             |_view, _state, event, _window, cx| {
                 if matches!(event, InputEvent::Change) {
@@ -50,16 +51,20 @@ impl WirecrabApp {
         )
         .detach();
 
-        cx.subscribe_in(&flow_table, window, |view, table, event, _window, cx| {
-            if let TableEvent::SelectRow(row_ix) = event {
-                let table_state = table.read(cx);
-                let delegate = table_state.delegate();
-                if let Some((key, _flow)) = delegate.flows.get(*row_ix) {
-                    view.select_flow(*key);
-                    cx.notify();
+        cx.subscribe_in(
+            flow_table.entity(),
+            window,
+            |view, table, event, _window, cx| {
+                if let TableEvent::SelectRow(row_ix) = event {
+                    let table_state = table.read(cx);
+                    let delegate = table_state.delegate();
+                    if let Some((key, _flow)) = delegate.flows.get(*row_ix) {
+                        view.select_flow(*key);
+                        cx.notify();
+                    }
                 }
-            }
-        })
+            },
+        )
         .detach();
 
         // Schedule the loader check loop
@@ -92,7 +97,7 @@ impl WirecrabApp {
             loading_progress: Some(0.0),
             error_message: None,
             selected_flow: None,
-            search_input,
+            search_bar,
             flow_table,
             packet_table: None,
             resizable_state,
@@ -186,12 +191,8 @@ impl WirecrabApp {
         self.selected_flow = Some(flow_key);
     }
 
-    fn current_flow(&self) -> Option<&Flow> {
-        self.selected_flow.and_then(|key| self.flows.get(&key))
-    }
-
     fn filtered_flows(&self, cx: &App) -> Vec<(FlowKey, Flow)> {
-        let search_text = self.search_input.read(cx).value().to_lowercase();
+        let search_text = self.search_bar.entity().read(cx).value().to_lowercase();
 
         if search_text.is_empty() {
             self.flows.iter().map(|(k, v)| (*k, v.clone())).collect()
@@ -215,39 +216,6 @@ impl WirecrabApp {
     fn endpoint_matches(endpoint: Endpoint, needle: &str) -> bool {
         endpoint.to_string().to_lowercase().contains(needle)
             || endpoint.port.to_string().contains(needle)
-    }
-
-    fn sync_packet_table(
-        &mut self,
-        selected_flow: Option<&Flow>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match selected_flow {
-            Some(flow) => {
-                if let Some(packet_table) = &self.packet_table {
-                    let start_timestamp = self.start_timestamp;
-                    packet_table.update(cx, |table, table_cx| {
-                        let delegate = table.delegate_mut();
-                        delegate.set_start_timestamp(start_timestamp);
-                        delegate.set_flow(Some(flow));
-                        table.refresh(table_cx);
-                        table_cx.notify();
-                    });
-                } else {
-                    self.packet_table = Some(PacketTableDelegate::create_entity(
-                        window,
-                        cx,
-                        Some(flow.clone()),
-                        self.start_timestamp,
-                    ));
-                    self.resizable_state = cx.new(|_| ResizableState::default());
-                }
-            }
-            None => {
-                self.packet_table = None;
-            }
-        }
     }
 }
 
@@ -298,7 +266,6 @@ impl Render for WirecrabApp {
         }
 
         let flows_vec = self.filtered_flows(cx);
-        // let filtered_count = flows_vec.len();
         let selected_flow = self.selected_flow;
 
         self.flow_table.update(cx, move |table, _cx| {
@@ -307,48 +274,47 @@ impl Render for WirecrabApp {
             delegate.selected_flow = selected_flow;
         });
 
-        // let total_flows = self.flows.len();
-        let current_flow = self.current_flow().cloned();
-        self.sync_packet_table(current_flow.as_ref(), window, cx);
+        let current_flow = self
+            .selected_flow
+            .and_then(|key| self.flows.get(&key))
+            .cloned();
 
-        let header = div()
-            // .text_xl()
-            // .py_1()
-            // .px_2()
-            // .bg(rgb(0x252525))
-            // .border_b_1()
-            // .border_color(rgb(0x444444))
-            // .child(format!(
-            //     "Wirecrab: {} flows ({} shown)",
-            //     total_flows, filtered_count
-            // ))
-            .child(SearchBar::new(&self.search_input));
+        match current_flow.as_ref() {
+            Some(flow) => {
+                if let Some(packet_table) = &mut self.packet_table {
+                    packet_table.update(flow, self.start_timestamp, cx);
+                } else {
+                    self.packet_table =
+                        Some(PacketTable::create(window, cx, flow, self.start_timestamp));
+                    self.resizable_state = cx.new(|_| ResizableState::default());
+                }
+            }
+            None => {
+                self.packet_table = None;
+            }
+        }
 
-        let main = div()
-            .size_full()
-            .overflow_hidden()
-            .rounded_none()
-            .border_1()
-            .border_color(cx.theme().colors.border)
-            .child(Table::new(&self.flow_table).bordered(false));
+        let header = self.search_bar.clone();
+        let main = self.flow_table.clone();
 
         let mut layout = Layout::new(self.resizable_state.clone())
             .header(header)
             .main(main);
 
-        match self.current_flow() {
-            Some(flow) => {
-                layout = layout.bottom(PacketPane::new(
-                    self.packet_table.as_ref().unwrap().clone(),
-                    flow.clone(),
-                    cx.listener(|view, _event, _window, cx| {
-                        view.selected_flow = None;
-                        view.packet_table = None;
-                        cx.notify();
-                    }),
-                ));
-            }
-            None => {}
+        if let (Some(packet_table), Some(flow)) =
+            (self.packet_table.as_ref(), current_flow.as_ref())
+        {
+            let header_content = PacketTable::pane_header(flow, cx);
+            let close_handler = cx.listener(|app: &mut WirecrabApp, &_event: &(), _window, cx| {
+                app.selected_flow = None;
+                app.packet_table = None;
+                cx.notify();
+            });
+
+            layout =
+                layout.bottom_closable(header_content, packet_table.clone(), move |window, cx| {
+                    close_handler(&(), window, cx);
+                });
         }
 
         div().size_full().child(layout)
@@ -370,6 +336,7 @@ pub fn run_ui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         };
         cx.open_window(win_opts, move |window, cx| {
             let app = cx.new(|cx| WirecrabApp::new(path.clone(), window, cx));
+
             cx.new(move |cx| Root::new(app, window, cx))
         })
         .ok();

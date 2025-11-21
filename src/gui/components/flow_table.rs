@@ -1,7 +1,53 @@
 use crate::flow::*;
 use gpui::*;
-use gpui_component::table::{Column, ColumnSort, TableDelegate, TableState};
+use gpui_component::ActiveTheme;
+use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
 use std::ops::Range;
+
+#[derive(IntoElement, Clone)]
+pub struct FlowTable {
+    state: Entity<TableState<FlowTableDelegate>>,
+}
+
+impl FlowTable {
+    pub fn create<Owner>(
+        window: &mut Window,
+        cx: &mut Context<Owner>,
+        flows: Vec<(FlowKey, Flow)>,
+        selected_flow: Option<FlowKey>,
+        start_timestamp: Option<f64>,
+    ) -> Self {
+        let state =
+            FlowTableDelegate::create_entity(window, cx, flows, selected_flow, start_timestamp);
+        Self { state }
+    }
+
+    pub fn update<F, R>(&self, cx: &mut App, f: F) -> R
+    where
+        F: FnOnce(
+            &mut TableState<FlowTableDelegate>,
+            &mut Context<TableState<FlowTableDelegate>>,
+        ) -> R,
+    {
+        self.state.update(cx, f)
+    }
+
+    pub fn entity(&self) -> &Entity<TableState<FlowTableDelegate>> {
+        &self.state
+    }
+}
+
+impl RenderOnce for FlowTable {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        div()
+            .size_full()
+            .overflow_hidden()
+            .rounded_none()
+            .border_1()
+            .border_color(cx.theme().colors.border)
+            .child(Table::new(&self.state).bordered(false))
+    }
+}
 
 pub struct FlowTableDelegate {
     pub flows: Vec<(FlowKey, Flow)>,
@@ -21,7 +67,7 @@ impl FlowTableDelegate {
             flows,
             selected_flow,
             columns: vec![
-                Column::new("timestamp", "Timestamp").width(100.).sortable(),
+                Column::new("timestamp", "Timestamp").width(110.).sortable(),
                 Column::new("protocol", "Protocol").width(100.).sortable(),
                 Column::new("source", "Source").width(170.).sortable(),
                 Column::new("source_port", "Src Port")
