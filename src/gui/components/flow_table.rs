@@ -8,24 +8,36 @@ pub struct FlowTableDelegate {
     pub selected_flow: Option<FlowKey>,
     pub columns: Vec<Column>,
     pub active_sort: Option<(usize, ColumnSort)>,
+    pub start_timestamp: Option<f64>,
 }
 
 impl FlowTableDelegate {
-    pub fn new(flows: Vec<(FlowKey, Flow)>, selected_flow: Option<FlowKey>) -> Self {
+    pub fn new(
+        flows: Vec<(FlowKey, Flow)>,
+        selected_flow: Option<FlowKey>,
+        start_timestamp: Option<f64>,
+    ) -> Self {
         Self {
             flows,
             selected_flow,
             columns: vec![
-                Column::new("timestamp", "Timestamp").width(120.).sortable(),
+                Column::new("timestamp", "Timestamp").width(100.).sortable(),
                 Column::new("protocol", "Protocol").width(100.).sortable(),
                 Column::new("source", "Source").width(170.).sortable(),
+                Column::new("source_port", "Src Port")
+                    .width(100.)
+                    .sortable(),
                 Column::new("destination", "Destination")
                     .width(170.)
+                    .sortable(),
+                Column::new("destination_port", "Dst Port")
+                    .width(100.)
                     .sortable(),
                 Column::new("packets", "Packets").width(100.).sortable(),
                 Column::new("bytes", "Bytes").width(120.).sortable(),
             ],
-            active_sort: None,
+            active_sort: Some((0, ColumnSort::Ascending)),
+            start_timestamp,
         }
     }
 
@@ -36,18 +48,21 @@ impl FlowTableDelegate {
         }
     }
 
+    pub fn set_start_timestamp(&mut self, timestamp: Option<f64>) {
+        self.start_timestamp = timestamp;
+    }
+
     fn sort_data(&mut self, col_ix: usize, sort: ColumnSort) {
         let col = &self.columns[col_ix];
 
         match col.key.as_ref() {
             "timestamp" => match sort {
-                ColumnSort::Ascending => self
+                ColumnSort::Ascending | ColumnSort::Default => self
                     .flows
                     .sort_by(|a, b| a.1.timestamp.partial_cmp(&b.1.timestamp).unwrap()),
                 ColumnSort::Descending => self
                     .flows
                     .sort_by(|a, b| b.1.timestamp.partial_cmp(&a.1.timestamp).unwrap()),
-                ColumnSort::Default => {}
             },
             "protocol" => match sort {
                 ColumnSort::Ascending => self.flows.sort_by(|a, b| {
@@ -65,6 +80,15 @@ impl FlowTableDelegate {
                 ColumnSort::Descending => {
                     self.flows.sort_by(|a, b| b.1.initiator.cmp(&a.1.initiator))
                 }
+                ColumnSort::Default => {}
+            },
+            "source_port" => match sort {
+                ColumnSort::Ascending => self
+                    .flows
+                    .sort_by(|a, b| a.1.initiator.port.cmp(&b.1.initiator.port)),
+                ColumnSort::Descending => self
+                    .flows
+                    .sort_by(|a, b| b.1.initiator.port.cmp(&a.1.initiator.port)),
                 ColumnSort::Default => {}
             },
             "destination" => match sort {
@@ -127,8 +151,15 @@ impl FlowTableDelegate {
         cx: &mut Context<Owner>,
         flows: Vec<(FlowKey, Flow)>,
         selected_flow: Option<FlowKey>,
+        start_timestamp: Option<f64>,
     ) -> Entity<TableState<Self>> {
-        cx.new(move |cx| TableState::new(FlowTableDelegate::new(flows, selected_flow), window, cx))
+        cx.new(move |cx| {
+            TableState::new(
+                FlowTableDelegate::new(flows, selected_flow, start_timestamp),
+                window,
+                cx,
+            )
+        })
     }
 }
 
@@ -156,15 +187,30 @@ impl TableDelegate for FlowTableDelegate {
         let col = &self.columns[col_ix];
 
         let content = match col.key.as_ref() {
-            "timestamp" => format!("{:.6}", flow.timestamp),
+            "timestamp" => {
+                if let Some(start) = self.start_timestamp {
+                    format!("{:.6}", flow.timestamp - start)
+                } else {
+                    format!("{:.6}", flow.timestamp)
+                }
+            }
             "protocol" => format!("{:?}", flow.protocol),
             "source" => flow.initiator.to_string(),
+            "source_port" => flow.initiator.port.to_string(),
             "destination" => {
                 if flow.endpoints.first == flow.initiator {
                     flow.endpoints.second.to_string()
                 } else {
                     flow.endpoints.first.to_string()
                 }
+            }
+            "destination_port" => {
+                let dst_endpoint = if flow.endpoints.first == flow.initiator {
+                    flow.endpoints.second
+                } else {
+                    flow.endpoints.first
+                };
+                dst_endpoint.port.to_string()
             }
             "packets" => flow.packets.len().to_string(),
             "bytes" => {
@@ -189,6 +235,13 @@ impl TableDelegate for FlowTableDelegate {
         _cx: &mut Context<TableState<Self>>,
     ) {
         self.active_sort = Some((col_ix, sort));
+        for (i, col) in self.columns.iter_mut().enumerate() {
+            if i == col_ix {
+                col.sort = Some(sort);
+            } else {
+                col.sort = Some(ColumnSort::Default);
+            }
+        }
         self.sort_data(col_ix, sort);
     }
 

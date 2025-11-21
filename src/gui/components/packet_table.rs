@@ -79,10 +79,11 @@ pub struct PacketTableDelegate {
     pub packets: Vec<Packet>,
     pub columns: Vec<Column>,
     pub active_sort: Option<(usize, ColumnSort)>,
+    pub start_timestamp: Option<f64>,
 }
 
 impl PacketTableDelegate {
-    pub fn new(flow: Option<&Flow>) -> Self {
+    pub fn new(flow: Option<&Flow>, start_timestamp: Option<f64>) -> Self {
         Self {
             packets: flow.map_or(vec![], |f| f.packets.clone()),
             columns: vec![
@@ -94,6 +95,7 @@ impl PacketTableDelegate {
                 make_packet_col("length", "Length", 100.),
             ],
             active_sort: None,
+            start_timestamp,
         }
     }
 
@@ -102,6 +104,10 @@ impl PacketTableDelegate {
         if let Some((col_ix, sort)) = self.active_sort {
             self.sort_data(col_ix, sort);
         }
+    }
+
+    pub fn set_start_timestamp(&mut self, timestamp: Option<f64>) {
+        self.start_timestamp = timestamp;
     }
 
     fn sort_data(&mut self, col_ix: usize, sort: ColumnSort) {
@@ -150,8 +156,15 @@ impl PacketTableDelegate {
         window: &mut Window,
         cx: &mut Context<Owner>,
         flow: Option<Flow>,
+        start_timestamp: Option<f64>,
     ) -> Entity<TableState<Self>> {
-        cx.new(move |cx| TableState::new(PacketTableDelegate::new(flow.as_ref()), window, cx))
+        cx.new(move |cx| {
+            TableState::new(
+                PacketTableDelegate::new(flow.as_ref(), start_timestamp),
+                window,
+                cx,
+            )
+        })
     }
 }
 
@@ -179,7 +192,13 @@ impl TableDelegate for PacketTableDelegate {
         let col = &self.columns[col_ix];
 
         let content = match col.key.as_ref() {
-            "timestamp" => format!("{:.6}", packet.timestamp),
+            "timestamp" => {
+                if let Some(start) = self.start_timestamp {
+                    format!("{:.6}", packet.timestamp - start)
+                } else {
+                    format!("{:.6}", packet.timestamp)
+                }
+            }
             "src_ip" => packet.src_ip.to_string(),
             "dst_ip" => packet.dst_ip.to_string(),
             "src_port" => packet

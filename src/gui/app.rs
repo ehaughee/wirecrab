@@ -24,6 +24,7 @@ pub struct WirecrabApp {
     flow_table: Entity<TableState<FlowTableDelegate>>,
     packet_table: Option<Entity<TableState<PacketTableDelegate>>>,
     resizable_state: Entity<ResizableState>,
+    start_timestamp: Option<f64>,
 }
 
 impl WirecrabApp {
@@ -36,7 +37,7 @@ impl WirecrabApp {
         let flows = HashMap::new();
         let initial_view: Vec<(FlowKey, Flow)> = Vec::new();
 
-        let flow_table = FlowTableDelegate::create_entity(window, cx, initial_view, None);
+        let flow_table = FlowTableDelegate::create_entity(window, cx, initial_view, None, None);
 
         cx.subscribe_in(
             &search_input,
@@ -95,6 +96,7 @@ impl WirecrabApp {
             flow_table,
             packet_table: None,
             resizable_state,
+            start_timestamp: None,
         }
     }
 
@@ -107,8 +109,11 @@ impl WirecrabApp {
             while let Some(status) = loader.try_recv() {
                 match status {
                     LoadStatus::Progress(p) => progress = Some(p),
-                    LoadStatus::Loaded(flows) => {
+                    LoadStatus::Loaded(flows, start_ts) => {
                         loaded_flows = Some(flows);
+                        if let Some(ts) = start_ts {
+                            self.start_timestamp = Some(ts);
+                        }
                         break;
                     }
                     LoadStatus::Error(e) => {
@@ -130,6 +135,18 @@ impl WirecrabApp {
         }
 
         if let Some(flows) = loaded_flows {
+            // If start_timestamp was not set by the loader (or is None), calculate it from flows
+            if self.start_timestamp.is_none() {
+                let min_ts = flows
+                    .values()
+                    .map(|f| f.timestamp)
+                    .fold(f64::INFINITY, |a, b| a.min(b));
+
+                if min_ts != f64::INFINITY {
+                    self.start_timestamp = Some(min_ts);
+                }
+            }
+
             self.flows = flows;
             self.loading_progress = None;
             self.loader = None;
@@ -154,10 +171,14 @@ impl WirecrabApp {
     fn update_flow_table(&mut self, cx: &mut Context<Self>) {
         let flows_vec = self.filtered_flows(cx);
         let selected_flow = self.selected_flow;
-        self.flow_table.update(cx, move |table, _cx| {
+        let start_timestamp = self.start_timestamp;
+        self.flow_table.update(cx, move |table, cx| {
             let delegate = table.delegate_mut();
+            delegate.set_start_timestamp(start_timestamp);
             delegate.set_flows(flows_vec);
             delegate.selected_flow = selected_flow;
+            table.refresh(cx);
+            cx.notify();
         });
     }
 
@@ -205,8 +226,10 @@ impl WirecrabApp {
         match selected_flow {
             Some(flow) => {
                 if let Some(packet_table) = &self.packet_table {
+                    let start_timestamp = self.start_timestamp;
                     packet_table.update(cx, |table, table_cx| {
                         let delegate = table.delegate_mut();
+                        delegate.set_start_timestamp(start_timestamp);
                         delegate.set_flow(Some(flow));
                         table.refresh(table_cx);
                         table_cx.notify();
@@ -216,6 +239,7 @@ impl WirecrabApp {
                         window,
                         cx,
                         Some(flow.clone()),
+                        self.start_timestamp,
                     ));
                     self.resizable_state = cx.new(|_| ResizableState::default());
                 }

@@ -11,7 +11,10 @@ struct InterfaceDescription {
     ts_offset: i64,
 }
 
-pub fn parse_pcap<F>(file_path: &std::path::Path, on_progress: F) -> Result<HashMap<FlowKey, Flow>>
+pub fn parse_pcap<F>(
+    file_path: &std::path::Path,
+    on_progress: F,
+) -> Result<(HashMap<FlowKey, Flow>, Option<f64>)>
 where
     F: Fn(f32),
 {
@@ -24,6 +27,7 @@ where
     let mut interfaces: Vec<InterfaceDescription> = Vec::new();
     let mut bytes_read = 0;
     let mut last_progress_update = 0;
+    let mut first_packet_ts: Option<f64> = None;
 
     loop {
         match reader.next() {
@@ -46,12 +50,6 @@ where
                             ts_resolution: idb.if_tsresol,
                             ts_offset: idb.if_tsoffset,
                         });
-                        println!(
-                            "Interface #{}: linktype={:?}, name={:?}",
-                            interfaces.len() - 1,
-                            idb.linktype,
-                            idb.if_name()
-                        );
                     }
                     PcapBlockOwned::NG(Block::EnhancedPacket(ref epb)) => {
                         // Validate interface id and link type
@@ -71,10 +69,15 @@ where
                                 ) {
                                     Ok(headers) => {
                                         // Parse packet metadata first; only build a flow when IP + TCP/UDP present
-                                        let timestamp = epb.decode_ts_f64(
-                                            interface.ts_offset as u64,
-                                            interface.ts_resolution as u64,
-                                        );
+                                        let timestamp = parse_timestamp(epb, interface);
+
+                                        if first_packet_ts.is_none() {
+                                            first_packet_ts = Some(timestamp);
+                                        } else if let Some(ts) = first_packet_ts {
+                                            if timestamp < ts {
+                                                first_packet_ts = Some(timestamp);
+                                            }
+                                        }
 
                                         let mut src_ip = None;
                                         let mut dst_ip = None;
@@ -208,5 +211,23 @@ where
             Err(e) => eprintln!("Error while reading: {:?}", e),
         }
     }
-    return Ok(flows);
+    return Ok((flows, first_packet_ts));
+}
+
+fn calculate_ts_unit(resolution: u8) -> u64 {
+    if resolution & 0x80 != 0 {
+        // Base 2 (High bit set)
+        2u64.pow((resolution & 0x7F) as u32)
+    } else {
+        // Base 10
+        10u64.pow(resolution as u32)
+    }
+}
+
+fn parse_timestamp(
+    epb: &pcap_parser::pcapng::EnhancedPacketBlock,
+    interface: &InterfaceDescription,
+) -> f64 {
+    let unit = calculate_ts_unit(interface.ts_resolution);
+    epb.decode_ts_f64(interface.ts_offset as u64, unit)
 }
