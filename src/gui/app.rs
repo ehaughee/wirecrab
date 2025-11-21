@@ -217,6 +217,7 @@ impl WirecrabApp {
                         cx,
                         Some(flow.clone()),
                     ));
+                    self.resizable_state = cx.new(|_| ResizableState::default());
                 }
             }
             None => {
@@ -342,7 +343,9 @@ impl Render for WirecrabApp {
         let mut container = v_resizable("main_split")
             .with_state(&self.resizable_state)
             .child(
-                resizable_panel().child(
+                resizable_panel()
+                    .size(px(DEFAULT_PACKET_PANE_HEIGHT))
+                    .child(
                     div()
                         .flex()
                         .flex_col()
@@ -375,7 +378,6 @@ impl Render for WirecrabApp {
         if let Some(packet_pane) = self.render_packet_pane_content(cx) {
             container = container.child(
                 resizable_panel()
-                    .size(px(DEFAULT_PACKET_PANE_HEIGHT))
                     .size_range(px(MIN_PACKET_PANE_HEIGHT)..px(f32::MAX))
                     .child(packet_pane),
             );
