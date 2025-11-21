@@ -1,4 +1,5 @@
 use crate::flow::*;
+use crate::layers::{LayerType, PacketContext, ParseResult, ParserRegistry};
 use anyhow::{Context, Result};
 use pcap_parser::traits::{PcapNGPacketBlock, PcapReaderIterator};
 use pcap_parser::*;
@@ -25,6 +26,7 @@ where
         .context("Failed to create reader")?;
     let mut flows: HashMap<FlowKey, Flow> = HashMap::new();
     let mut interfaces: Vec<InterfaceDescription> = Vec::new();
+    let registry = ParserRegistry::new();
     let mut bytes_read = 0;
     let mut last_progress_update = 0;
     let mut first_packet_ts: Option<f64> = None;
@@ -63,111 +65,87 @@ where
                             let interface = &interfaces[if_id];
                             if interface.linktype == pcap_parser::Linktype::ETHERNET {
                                 let epb_packet_data = epb.packet_data();
-                                // Try parsing even if truncated; parser will error if too short
-                                match etherparse::PacketHeaders::from_ethernet_slice(
-                                    epb_packet_data,
+                                let timestamp = parse_timestamp(epb, interface);
+
+                                if first_packet_ts.is_none() {
+                                    first_packet_ts = Some(timestamp);
+                                } else if let Some(ts) = first_packet_ts {
+                                    if timestamp < ts {
+                                        first_packet_ts = Some(timestamp);
+                                    }
+                                }
+
+                                let mut context = PacketContext::default();
+                                let mut current_layer = LayerType::Ethernet;
+                                let mut current_data = epb_packet_data.to_vec();
+
+                                loop {
+                                    if let Some(parser) = registry.get(current_layer) {
+                                        match parser.parse(&current_data, &mut context) {
+                                            ParseResult::NextLayer {
+                                                next_layer,
+                                                payload,
+                                            } => {
+                                                current_layer = next_layer;
+                                                current_data = payload;
+                                            }
+                                            ParseResult::Final => break,
+                                            ParseResult::Error(_) => break,
+                                        }
+                                    } else {
+                                        break;
+                                    }
+                                }
+
+                                if let (
+                                    Some(src_ip),
+                                    Some(dst_ip),
+                                    Some(src_port),
+                                    Some(dst_port),
+                                    Some(protocol),
+                                ) = (
+                                    context.src_ip,
+                                    context.dst_ip,
+                                    context.src_port,
+                                    context.dst_port,
+                                    context.protocol,
                                 ) {
-                                    Ok(headers) => {
-                                        // Parse packet metadata first; only build a flow when IP + TCP/UDP present
-                                        let timestamp = parse_timestamp(epb, interface);
+                                    let src_ep = Endpoint::new(src_ip, src_port);
+                                    let dst_ep = Endpoint::new(dst_ip, dst_port);
+                                    let endpoints = FlowEndpoints::new(src_ep, dst_ep);
+                                    let key = FlowKey {
+                                        endpoints,
+                                        protocol,
+                                    };
 
-                                        if first_packet_ts.is_none() {
-                                            first_packet_ts = Some(timestamp);
-                                        } else if let Some(ts) = first_packet_ts {
-                                            if timestamp < ts {
-                                                first_packet_ts = Some(timestamp);
-                                            }
-                                        }
+                                    // Collect packet data per flow, creating a new flow if one does not exist for this 5-tuple
+                                    let packet = Packet {
+                                        timestamp,
+                                        src_ip,
+                                        dst_ip,
+                                        src_port: Some(src_port),
+                                        dst_port: Some(dst_port),
+                                        length: epb_packet_data.len() as u32,
+                                        data: epb_packet_data.to_vec(),
+                                    };
 
-                                        let mut src_ip = None;
-                                        let mut dst_ip = None;
+                                    let flow = flows.entry(key).or_insert_with(|| Flow {
+                                        timestamp,
+                                        protocol,
+                                        source: src_ep,
+                                        destination: dst_ep,
+                                        packets: Vec::new(),
+                                    });
 
-                                        // Extract source and destination IPs
-                                        match headers.net {
-                                            Some(etherparse::NetHeaders::Ipv4(ipv4, _)) => {
-                                                src_ip = Some(IPAddress::V4(ipv4.source));
-                                                dst_ip = Some(IPAddress::V4(ipv4.destination));
-                                            }
-                                            Some(etherparse::NetHeaders::Ipv6(ipv6, _)) => {
-                                                src_ip = Some(IPAddress::V6(ipv6.source));
-                                                dst_ip = Some(IPAddress::V6(ipv6.destination));
-                                            }
-                                            _ => {
-                                                // Non-IP
-                                            }
-                                        }
-
-                                        let mut src_port = None;
-                                        let mut dst_port = None;
-                                        let mut protocol = None;
-                                        let mut is_syn = false;
-                                        let mut is_ack = false;
-
-                                        // Extract source and destination ports
-                                        match headers.transport {
-                                            Some(etherparse::TransportHeader::Tcp(tcp)) => {
-                                                src_port = Some(tcp.source_port);
-                                                dst_port = Some(tcp.destination_port);
-                                                protocol = Some(Protocol::TCP);
-                                                is_syn = tcp.syn;
-                                                is_ack = tcp.ack;
-                                            }
-                                            Some(etherparse::TransportHeader::Udp(udp)) => {
-                                                src_port = Some(udp.source_port);
-                                                dst_port = Some(udp.destination_port);
-                                                protocol = Some(Protocol::UDP);
-                                            }
-                                            _ => {
-                                                // Not TCP/UDP
-                                            }
-                                        }
-
-                                        if let (
-                                            Some(src_ip),
-                                            Some(dst_ip),
-                                            Some(src_port),
-                                            Some(dst_port),
-                                            Some(protocol),
-                                        ) = (src_ip, dst_ip, src_port, dst_port, protocol)
-                                        {
-                                            let src_ep = Endpoint::new(src_ip, src_port);
-                                            let dst_ep = Endpoint::new(dst_ip, dst_port);
-                                            let endpoints = FlowEndpoints::new(src_ep, dst_ep);
-                                            let key = FlowKey {
-                                                endpoints,
-                                                protocol,
-                                            };
-
-                                            // Collect packet data per flow, creating a new flow if one does not exist for this 5-tuple
-                                            let packet = Packet {
-                                                timestamp,
-                                                src_ip,
-                                                dst_ip,
-                                                src_port: Some(src_port),
-                                                dst_port: Some(dst_port),
-                                                length: epb_packet_data.len() as u32,
-                                                data: epb_packet_data.to_vec(),
-                                            };
-
-                                            let flow = flows.entry(key).or_insert_with(|| Flow {
-                                                timestamp,
-                                                protocol,
-                                                source: src_ep,
-                                                destination: dst_ep,
-                                                packets: Vec::new(),
-                                            });
-
-                                            if protocol == Protocol::TCP && is_syn && !is_ack {
-                                                flow.source = src_ep;
-                                                flow.destination = dst_ep;
-                                            }
-
-                                            flow.packets.push(packet);
-                                        }
+                                    if protocol == Protocol::TCP
+                                        && context.is_syn
+                                        && !context.is_ack
+                                    {
+                                        flow.source = src_ep;
+                                        flow.destination = dst_ep;
                                     }
-                                    Err(e) => {
-                                        println!("Failed to parse packet: {:?}", e);
-                                    }
+
+                                    flow.packets.push(packet);
                                 }
                             }
                         }

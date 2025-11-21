@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 mod flow;
 mod gui;
+mod layers;
 mod loader;
 mod parser;
 mod tui;

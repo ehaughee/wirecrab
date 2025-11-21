@@ -13,7 +13,8 @@ classDiagram
     class Flow {
         +f64 timestamp
         +Protocol protocol
-        +FlowEndpoints endpoints
+        +Endpoint source
+        +Endpoint destination
         +Vec~Packet~ packets
     }
     class Packet {
@@ -37,34 +38,52 @@ classDiagram
         +IPAddress ip
         +u16 port
     }
+    class PacketContext {
+        +Option~IPAddress~ src_ip
+        +Option~IPAddress~ dst_ip
+        +Option~u16~ src_port
+        +Option~u16~ dst_port
+        +Option~Protocol~ protocol
+        +bool is_syn
+        +bool is_ack
+    }
 
-    Flow *-- FlowEndpoints
+    Flow *-- Endpoint
     Flow *-- Packet
     FlowKey *-- FlowEndpoints
     FlowEndpoints *-- Endpoint
 ```
 
 - **Packet**: Represents a single captured packet with timestamp, length, and raw data.
-- **Flow**: Represents a bidirectional stream of packets between two endpoints (IP:Port pairs). It aggregates individual `Packet`s.
+- **Flow**: Represents a bidirectional stream of packets between two endpoints (IP:Port pairs). It aggregates individual `Packet`s. It explicitly tracks `source` and `destination` to identify the initiator.
 - **FlowKey**: A canonical key used to identify a flow, consisting of sorted endpoints and the protocol. This ensures packets from A->B and B->A map to the same flow.
+- **PacketContext**: A transient structure used during parsing to accumulate metadata (IPs, ports, flags) as the packet traverses different protocol layers.
 
-### Ingestion (`src/parser.rs`)
+### Ingestion (`src/parser.rs` & `src/layers/`)
+
+The parsing logic uses an extensible, layered architecture.
 
 ```mermaid
 flowchart LR
     PCAP[PCAP File] --> Parser[src/parser.rs]
     Parser -->|Iterate Blocks| PcapParser[pcap-parser crate]
-    Parser -->|Decode Headers| EtherParse[etherparse crate]
-    Parser -->|Aggregate| Flows[HashMap<FlowKey, Flow>]
+    Parser -->|Get Parser| Registry[ParserRegistry]
+    Registry -->|Delegate| Layer[LayerParser Implementation]
+    Layer -->|Parse| Result[ParseResult]
+    Result -->|Next Layer| Registry
+    Result -->|Final| Flows[HashMap<FlowKey, Flow>]
     Flows -->|Pass Ownership| Main[src/main.rs]
     Main -->|--ui| GUI[GUI Runner]
     Main -->|--tui| TUI[TUI Runner]
 ```
 
-- Uses `pcap-parser` to iterate over blocks in a PCAPNG file.
-- Uses `etherparse` to decode Ethernet, IP, and Transport layer headers.
-- Aggregates packets into `Flow`s stored in a `HashMap<FlowKey, Flow>`.
-- **Note**: The parser currently loads the entire file into memory.
+- **Parser Loop**: Iterates over PCAP blocks using `pcap-parser`.
+- **Layered Parsing**:
+  - Uses a `ParserRegistry` to manage parsers for different protocols (`LayerType`).
+  - **`LayerParser` Trait**: Defines the interface for parsing a specific protocol layer.
+  - **Implementations**: `EthernetParser`, `IPv4Parser`, `IPv6Parser`, `TcpParser`, `UdpParser` (wrapping `etherparse`).
+  - The parser loop dynamically resolves the next layer based on the `ParseResult` returned by the current layer, while updating a shared `PacketContext`.
+- **Aggregation**: Aggregates packets into `Flow`s stored in a `HashMap<FlowKey, Flow>`.
 
 ## User Interface Architectures
 
@@ -122,7 +141,8 @@ graph TD
 ## Directory Structure
 
 - `src/main.rs`: Entry point. Handles CLI args and dispatches to TUI or GUI.
-- `src/parser.rs`: PCAP parsing logic.
+- `src/parser.rs`: PCAP parsing logic and loop.
+- `src/layers/`: Protocol parser implementations and registry.
 - `src/flow.rs`: Core data structures.
 - `src/gui/`: GPUI implementation.
 - `src/tui/`: Ratatui implementation.
