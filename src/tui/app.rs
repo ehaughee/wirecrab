@@ -61,7 +61,7 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             while let Some(status) = l.try_recv() {
                 match status {
                     LoadStatus::Progress(p) => loading_progress = Some(p),
-                    LoadStatus::Loaded(flows) => {
+                    LoadStatus::Loaded(flows, _start_ts) => {
                         app = AppState::new(flows);
                         loading_progress = None;
                         done = true;
