@@ -24,14 +24,14 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(flows: HashMap<FlowKey, Flow>) -> Self {
+    pub fn new(flows: HashMap<FlowKey, Flow>, start_timestamp: Option<f64>) -> Self {
         let mut table_state = ratatui::widgets::TableState::default();
         if !flows.is_empty() {
             table_state.select(Some(0));
         }
 
         Self {
-            packet_table: PacketTableState::new(flows),
+            packet_table: PacketTableState::new(flows, start_timestamp),
             table_state,
             filter: String::new(),
             filter_mode: false,
@@ -50,7 +50,7 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let mut loading_progress = Some(0.0);
     let mut error_message: Option<String> = None;
 
-    let mut app = AppState::new(HashMap::new());
+    let mut app = AppState::new(HashMap::new(), None);
     let mut last_tick = Instant::now();
     let tick_rate = Duration::from_millis(100);
 
@@ -61,8 +61,8 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             while let Some(status) = l.try_recv() {
                 match status {
                     LoadStatus::Progress(p) => loading_progress = Some(p),
-                    LoadStatus::Loaded(flows, _start_ts) => {
-                        app = AppState::new(flows);
+                    LoadStatus::Loaded(flows, start_ts) => {
+                        app = AppState::new(flows, start_ts);
                         loading_progress = None;
                         done = true;
                     }
@@ -120,7 +120,7 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             let filter_title = if app.filter_mode {
                 "Filter (ESC to exit)"
             } else {
-                "Filter (/ to edit)"
+                "Filter"
             };
             let filter_display = if app.filter.is_empty() && !app.filter_mode {
                 "Type / to start filtering...".to_string()

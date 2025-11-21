@@ -12,10 +12,11 @@ pub struct PacketTableState {
     flow_order: Vec<FlowKey>,
     flows: HashMap<FlowKey, Flow>,
     row_to_flow_map: Vec<Option<FlowKey>>, // Maps table row index to flow key
+    start_timestamp: Option<f64>,
 }
 
 impl PacketTableState {
-    pub fn new(flows: HashMap<FlowKey, Flow>) -> Self {
+    pub fn new(flows: HashMap<FlowKey, Flow>, start_timestamp: Option<f64>) -> Self {
         let mut flow_order: Vec<FlowKey> = flows.keys().copied().collect();
 
         // Sort by timestamp (oldest first)
@@ -35,6 +36,7 @@ impl PacketTableState {
             flow_order,
             flows,
             row_to_flow_map: Vec::new(),
+            start_timestamp,
         }
     }
 
@@ -98,7 +100,7 @@ impl PacketTableState {
                 let (src_endpoint, dst_endpoint) = (flow.source, flow.destination);
 
                 // Check if this flow matches the filter
-                let timestamp_str = format_timestamp(flow.timestamp);
+                let timestamp_str = format_timestamp(flow.timestamp, self.start_timestamp);
                 let endpoint_a_ip = format_ip_address(&src_endpoint.ip);
                 let endpoint_b_ip = format_ip_address(&dst_endpoint.ip);
                 let endpoint_a_port = src_endpoint.port.to_string();
@@ -136,7 +138,10 @@ impl PacketTableState {
                     if self.expanded_flows.contains(flow_key) {
                         for (_i, packet) in flow.packets.iter().enumerate() {
                             let packet_row = Row::new(vec![
-                                Cell::from(format!("  {}", format_timestamp(packet.timestamp))),
+                                Cell::from(format!(
+                                    "  {}",
+                                    format_timestamp(packet.timestamp, self.start_timestamp)
+                                )),
                                 Cell::from(format_ip_address(&packet.src_ip)),
                                 Cell::from(
                                     packet.src_port.map(|p| p.to_string()).unwrap_or_default(),
@@ -173,9 +178,13 @@ impl PacketTableState {
     }
 }
 
-fn format_timestamp(timestamp: f64) -> String {
-    // Convert to a readable format (you might want to use chrono for better formatting)
-    format!("{:.6}", timestamp)
+fn format_timestamp(timestamp: f64, start_timestamp: Option<f64>) -> String {
+    let ts = if let Some(start) = start_timestamp {
+        timestamp - start
+    } else {
+        timestamp
+    };
+    format!("{:.6}", ts)
 }
 
 fn format_ip_address(ip: &IPAddress) -> String {
