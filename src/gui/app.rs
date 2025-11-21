@@ -12,6 +12,7 @@ use gpui_component::{IconName, Root};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+const MIN_PACKET_PANE_HEIGHT: f32 = 160.0;
 const DEFAULT_PACKET_PANE_HEIGHT: f32 = 320.0;
 
 pub struct WirecrabApp {
@@ -345,19 +346,18 @@ impl Render for WirecrabApp {
                     div()
                         .flex()
                         .flex_col()
-                        .w_full()
-                        .h_full()
+                        .size_full()
                         .bg(rgb(0x1e1e1e))
                         .text_color(rgb(0xffffff))
                         .child(
                             div()
                                 .text_xl()
-                                .p_2()
+                                .p_1()
                                 .bg(rgb(0x252525))
                                 .border_b_1()
                                 .border_color(rgb(0x444444))
                                 .child(format!(
-                                    "Wirecrab: {} flows loaded ({} shown)",
+                                    "Wirecrab: {} flows ({} shown)",
                                     total_flows, filtered_count
                                 )),
                         )
@@ -376,6 +376,7 @@ impl Render for WirecrabApp {
             container = container.child(
                 resizable_panel()
                     .size(px(DEFAULT_PACKET_PANE_HEIGHT))
+                    .size_range(px(MIN_PACKET_PANE_HEIGHT)..px(f32::MAX))
                     .child(packet_pane),
             );
         }
