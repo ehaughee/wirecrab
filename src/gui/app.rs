@@ -5,11 +5,11 @@ use crate::gui::layout::Layout;
 use crate::loader::{LoadStatus, Loader};
 use gpui::AsyncApp;
 use gpui::*;
-use gpui_component::Root;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::progress::Progress;
 use gpui_component::resizable::ResizableState;
 use gpui_component::table::{Table, TableEvent, TableState};
+use gpui_component::{ActiveTheme, Root};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -261,8 +261,8 @@ impl Render for WirecrabApp {
                 .items_center()
                 .justify_center()
                 .size_full()
-                .bg(rgb(0x1e1e1e))
-                .text_color(rgb(0xffffff))
+                .bg(cx.theme().colors.background)
+                .text_color(cx.theme().colors.foreground)
                 .child(
                     div()
                         .text_xl()
@@ -279,7 +279,7 @@ impl Render for WirecrabApp {
                     div()
                         .mt_2()
                         .text_sm()
-                        .text_color(rgb(0xaaaaaa))
+                        .text_color(cx.theme().colors.muted_foreground)
                         .child(format!("{:.0}%", progress_percent)),
                 );
         }
@@ -291,8 +291,8 @@ impl Render for WirecrabApp {
                 .items_center()
                 .justify_center()
                 .size_full()
-                .bg(rgb(0x1e1e1e))
-                .text_color(rgb(0xff5555))
+                .bg(cx.theme().colors.background)
+                .text_color(cx.theme().colors.foreground)
                 .child(div().text_xl().mb_4().child("Error loading file"))
                 .child(div().text_sm().child(error.clone()));
         }
@@ -324,7 +324,13 @@ impl Render for WirecrabApp {
             // ))
             .child(SearchBar::new(&self.search_input));
 
-        let main = Table::new(&self.flow_table);
+        let main = div()
+            .size_full()
+            .overflow_hidden()
+            .rounded_none()
+            .border_1()
+            .border_color(cx.theme().colors.border)
+            .child(Table::new(&self.flow_table).bordered(false));
 
         let mut layout = Layout::new(self.resizable_state.clone())
             .header(header)
@@ -354,6 +360,7 @@ pub fn run_ui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
     app.run(move |cx: &mut App| {
         gpui_component::init(cx);
+        crate::gui::theme::init(cx);
         let win_opts = WindowOptions {
             titlebar: Some(TitlebarOptions {
                 title: Some(String::from("Wirecrab").into()),

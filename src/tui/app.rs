@@ -9,12 +9,14 @@ use crossterm::{execute, terminal};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Color, Modifier, Style, Stylize};
+use ratatui::style::{Modifier, Style, Stylize};
 use ratatui::widgets::{Block, Borders, Cell, Gauge, Paragraph, Row, Table};
 
+use super::to_color;
 use super::widgets::PacketTableState;
 use crate::flow::{Flow, FlowKey};
 use crate::loader::{LoadStatus, Loader};
+use crate::tui::theme::flexoki;
 
 pub struct AppState {
     packet_table: PacketTableState,
@@ -92,7 +94,7 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
                 let gauge = Gauge::default()
                     .block(Block::default().borders(Borders::ALL).title("Loading PCAP"))
-                    .gauge_style(Style::default().fg(Color::Blue))
+                    .gauge_style(Style::default().fg(to_color(flexoki::BLUE_400)))
                     .percent((progress * 100.0) as u16);
                 f.render_widget(gauge, gauge_area);
                 return;
@@ -101,7 +103,7 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             if let Some(err) = &error_message {
                 let p = Paragraph::new(err.clone())
                     .block(Block::default().borders(Borders::ALL).title("Error"))
-                    .style(Style::default().fg(Color::Red));
+                    .style(Style::default().fg(to_color(flexoki::RED_400)));
                 f.render_widget(p, f.area());
                 return;
             }
@@ -148,7 +150,9 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             ]
             .iter()
             .map(|h| Cell::from(*h).style(Style::default().add_modifier(Modifier::BOLD)));
-            let header = Row::new(header_cells).height(1).bg(Color::Blue);
+            let header = Row::new(header_cells)
+                .height(1)
+                .bg(to_color(flexoki::BLUE_600));
 
             let table = Table::new(rows, widths)
                 .header(header)

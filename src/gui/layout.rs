@@ -1,5 +1,6 @@
 use gpui::*;
 use gpui_component::resizable::{ResizableState, resizable_panel, v_resizable};
+use gpui_component::ActiveTheme;
 
 const MIN_BOTTOM_PANE_HEIGHT: f32 = 160.0;
 const DEFAULT_BOTTOM_PANE_HEIGHT: f32 = 320.0;
@@ -39,13 +40,13 @@ impl Layout {
 }
 
 impl RenderOnce for Layout {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let header_content = div()
             .flex()
             .flex_col()
             .size_full()
-            .bg(rgb(0x1e1e1e))
-            .text_color(rgb(0xffffff))
+            .bg(cx.theme().colors.background)
+            .text_color(cx.theme().colors.foreground)
             .child(self.header)
             .child(div().flex_1().overflow_hidden().child(self.main));
 

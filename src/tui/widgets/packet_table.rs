@@ -1,11 +1,13 @@
 use ratatui::{
     layout::Constraint,
-    style::{Color, Style},
+    style::Style,
     widgets::{Cell, Row},
 };
 use std::collections::{HashMap, HashSet};
 
 use crate::flow::{Flow, FlowKey, IPAddress, Protocol};
+use crate::tui::theme::flexoki;
+use crate::tui::to_color;
 
 pub struct PacketTableState {
     pub expanded_flows: HashSet<FlowKey>,
@@ -154,7 +156,7 @@ impl PacketTableState {
                                 Cell::from(""),
                                 Cell::from(format!("{}", packet.length)),
                             ])
-                            .style(Style::default().fg(Color::Gray));
+                            .style(Style::default().fg(to_color(flexoki::BASE_500)));
                             rows.push(packet_row);
                             row_to_flow_map.push(Some(*flow_key)); // Packet detail rows also map to their parent flow
                         }

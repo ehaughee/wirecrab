@@ -2,7 +2,7 @@ use crate::flow::{Flow, Packet};
 use gpui::*;
 use gpui_component::button::Button;
 use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
-use gpui_component::{IconName, StyledExt};
+use gpui_component::{ActiveTheme, IconName, StyledExt};
 use std::ops::Range;
 
 #[derive(IntoElement)]
@@ -27,15 +27,15 @@ impl PacketPane {
 }
 
 impl RenderOnce for PacketPane {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let flow_summary = self.flow.to_string();
 
         div()
             .flex()
             .flex_col()
-            .bg(rgb(0x202020))
+            .bg(cx.theme().colors.background)
             .border_t_1()
-            .border_color(rgb(0x444444))
+            .border_color(cx.theme().colors.border)
             .size_full()
             .child(
                 div()
@@ -45,20 +45,20 @@ impl RenderOnce for PacketPane {
                     .gap_2()
                     .py_1()
                     .px_2()
-                    .bg(rgb(0x252525))
+                    .bg(cx.theme().colors.popover)
                     .border_b_1()
-                    .border_color(rgb(0x444444))
+                    .border_color(cx.theme().colors.border)
                     .child(
                         div()
                             .text_lg()
                             .font_bold()
-                            .text_color(rgb(0xffffff))
+                            .text_color(cx.theme().colors.foreground)
                             .child("Flow Packets"),
                     )
                     .child(
                         div()
                             .text_sm()
-                            .text_color(rgb(0xaaaaaa))
+                            .text_color(cx.theme().colors.muted_foreground)
                             .child(flow_summary),
                     )
                     .child(
@@ -71,7 +71,10 @@ impl RenderOnce for PacketPane {
                 div()
                     .flex_1()
                     .overflow_hidden()
-                    .child(Table::new(&self.table)),
+                    .rounded_none()
+                    .border_1()
+                    .border_color(cx.theme().colors.border)
+                    .child(Table::new(&self.table).bordered(false)),
             )
     }
 }
