@@ -95,11 +95,7 @@ impl PacketTableState {
         for flow_key in &self.flow_order.clone() {
             if let Some(flow) = self.flows.get(flow_key) {
                 // Determine source (initiator) and destination
-                let (src_endpoint, dst_endpoint) = if flow.endpoints.first == flow.initiator {
-                    (flow.endpoints.first, flow.endpoints.second)
-                } else {
-                    (flow.endpoints.second, flow.endpoints.first)
-                };
+                let (src_endpoint, dst_endpoint) = (flow.source, flow.destination);
 
                 // Check if this flow matches the filter
                 let timestamp_str = format_timestamp(flow.timestamp);

@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IPAddress {
@@ -29,8 +30,8 @@ pub struct FlowEndpoints {
 pub struct Flow {
     pub timestamp: f64,
     pub protocol: Protocol,
-    pub endpoints: FlowEndpoints,
-    pub initiator: Endpoint,
+    pub source: Endpoint,
+    pub destination: Endpoint,
     pub packets: Vec<Packet>,
 }
 
@@ -50,17 +51,11 @@ impl Default for Flow {
         Flow {
             timestamp: 0.0,
             protocol: Protocol::Other(0),
-            endpoints: FlowEndpoints {
-                first: Endpoint {
-                    ip: IPAddress::V4([0, 0, 0, 0]),
-                    port: 0,
-                },
-                second: Endpoint {
-                    ip: IPAddress::V4([0, 0, 0, 0]),
-                    port: 0,
-                },
+            source: Endpoint {
+                ip: IPAddress::V4([0, 0, 0, 0]),
+                port: 0,
             },
-            initiator: Endpoint {
+            destination: Endpoint {
                 ip: IPAddress::V4([0, 0, 0, 0]),
                 port: 0,
             },
@@ -68,6 +63,17 @@ impl Default for Flow {
         }
     }
 }
+
+impl fmt::Display for Flow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} ↔ {} ({:?})",
+            self.source, self.destination, self.protocol
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FlowKey {
     pub endpoints: FlowEndpoints,
@@ -75,8 +81,6 @@ pub struct FlowKey {
 }
 
 impl FlowKey {}
-
-use std::fmt;
 
 impl fmt::Display for IPAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -142,16 +146,9 @@ impl PartialOrd for Endpoint {
 
 impl FlowEndpoints {
     pub fn new(a: Endpoint, b: Endpoint) -> Self {
-        if a <= b {
-            FlowEndpoints {
-                first: a,
-                second: b,
-            }
-        } else {
-            FlowEndpoints {
-                first: b,
-                second: a,
-            }
+        FlowEndpoints {
+            first: std::cmp::min(a, b),
+            second: std::cmp::max(a, b),
         }
     }
 }

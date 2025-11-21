@@ -152,13 +152,14 @@ where
                                             let flow = flows.entry(key).or_insert_with(|| Flow {
                                                 timestamp,
                                                 protocol,
-                                                endpoints,
-                                                initiator: src_ep,
+                                                source: src_ep,
+                                                destination: dst_ep,
                                                 packets: Vec::new(),
                                             });
 
                                             if protocol == Protocol::TCP && is_syn && !is_ack {
-                                                flow.initiator = src_ep;
+                                                flow.source = src_ep;
+                                                flow.destination = dst_ep;
                                             }
 
                                             flow.packets.push(packet);

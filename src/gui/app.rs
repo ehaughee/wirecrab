@@ -199,7 +199,7 @@ impl WirecrabApp {
             self.flows
                 .iter()
                 .filter(|(_, flow)| {
-                    let endpoints = [flow.endpoints.first, flow.endpoints.second];
+                    let endpoints = [flow.source, flow.destination];
                     endpoints
                         .iter()
                         .any(|endpoint| Self::endpoint_matches(*endpoint, &search_text))

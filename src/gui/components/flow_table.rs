@@ -74,50 +74,35 @@ impl FlowTableDelegate {
                 ColumnSort::Default => {}
             },
             "source" => match sort {
-                ColumnSort::Ascending => {
-                    self.flows.sort_by(|a, b| a.1.initiator.cmp(&b.1.initiator))
-                }
-                ColumnSort::Descending => {
-                    self.flows.sort_by(|a, b| b.1.initiator.cmp(&a.1.initiator))
-                }
+                ColumnSort::Ascending => self.flows.sort_by(|a, b| a.1.source.cmp(&b.1.source)),
+                ColumnSort::Descending => self.flows.sort_by(|a, b| b.1.source.cmp(&a.1.source)),
                 ColumnSort::Default => {}
             },
             "source_port" => match sort {
                 ColumnSort::Ascending => self
                     .flows
-                    .sort_by(|a, b| a.1.initiator.port.cmp(&b.1.initiator.port)),
+                    .sort_by(|a, b| a.1.source.port.cmp(&b.1.source.port)),
                 ColumnSort::Descending => self
                     .flows
-                    .sort_by(|a, b| b.1.initiator.port.cmp(&a.1.initiator.port)),
+                    .sort_by(|a, b| b.1.source.port.cmp(&a.1.source.port)),
                 ColumnSort::Default => {}
             },
             "destination" => match sort {
-                ColumnSort::Ascending => self.flows.sort_by(|a, b| {
-                    let a_dst = if a.1.endpoints.first == a.1.initiator {
-                        a.1.endpoints.second
-                    } else {
-                        a.1.endpoints.first
-                    };
-                    let b_dst = if b.1.endpoints.first == b.1.initiator {
-                        b.1.endpoints.second
-                    } else {
-                        b.1.endpoints.first
-                    };
-                    a_dst.cmp(&b_dst)
-                }),
-                ColumnSort::Descending => self.flows.sort_by(|a, b| {
-                    let a_dst = if a.1.endpoints.first == a.1.initiator {
-                        a.1.endpoints.second
-                    } else {
-                        a.1.endpoints.first
-                    };
-                    let b_dst = if b.1.endpoints.first == b.1.initiator {
-                        b.1.endpoints.second
-                    } else {
-                        b.1.endpoints.first
-                    };
-                    b_dst.cmp(&a_dst)
-                }),
+                ColumnSort::Ascending => self
+                    .flows
+                    .sort_by(|a, b| a.1.destination.cmp(&b.1.destination)),
+                ColumnSort::Descending => self
+                    .flows
+                    .sort_by(|a, b| b.1.destination.cmp(&a.1.destination)),
+                ColumnSort::Default => {}
+            },
+            "destination_port" => match sort {
+                ColumnSort::Ascending => self
+                    .flows
+                    .sort_by(|a, b| a.1.destination.port.cmp(&b.1.destination.port)),
+                ColumnSort::Descending => self
+                    .flows
+                    .sort_by(|a, b| b.1.destination.port.cmp(&a.1.destination.port)),
                 ColumnSort::Default => {}
             },
             "packets" => match sort {
@@ -195,23 +180,10 @@ impl TableDelegate for FlowTableDelegate {
                 }
             }
             "protocol" => format!("{:?}", flow.protocol),
-            "source" => flow.initiator.to_string(),
-            "source_port" => flow.initiator.port.to_string(),
-            "destination" => {
-                if flow.endpoints.first == flow.initiator {
-                    flow.endpoints.second.to_string()
-                } else {
-                    flow.endpoints.first.to_string()
-                }
-            }
-            "destination_port" => {
-                let dst_endpoint = if flow.endpoints.first == flow.initiator {
-                    flow.endpoints.second
-                } else {
-                    flow.endpoints.first
-                };
-                dst_endpoint.port.to_string()
-            }
+            "source" => flow.source.to_string(),
+            "source_port" => flow.source.port.to_string(),
+            "destination" => flow.destination.to_string(),
+            "destination_port" => flow.destination.port.to_string(),
             "packets" => flow.packets.len().to_string(),
             "bytes" => {
                 let total: u64 = flow.packets.iter().map(|p| p.length as u64).sum();

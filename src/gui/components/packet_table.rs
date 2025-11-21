@@ -28,7 +28,7 @@ impl PacketPane {
 
 impl RenderOnce for PacketPane {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let flow_summary = format!("{} ({:?})", self.flow.endpoints, self.flow.protocol);
+        let flow_summary = self.flow.to_string();
 
         div()
             .flex()
@@ -57,7 +57,7 @@ impl RenderOnce for PacketPane {
                     )
                     .child(
                         div()
-                            .text_xs()
+                            .text_sm()
                             .text_color(rgb(0xaaaaaa))
                             .child(flow_summary),
                     )
