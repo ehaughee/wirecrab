@@ -1,7 +1,79 @@
 use crate::flow::{Flow, Packet};
 use gpui::*;
-use gpui_component::table::{Column, ColumnSort, TableDelegate, TableState};
+use gpui_component::IconName;
+use gpui_component::button::Button;
+use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
 use std::ops::Range;
+
+#[derive(IntoElement)]
+pub struct PacketPane {
+    table: Entity<TableState<PacketTableDelegate>>,
+    flow: Flow,
+    on_close: Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>,
+}
+
+impl PacketPane {
+    pub fn new(
+        table: Entity<TableState<PacketTableDelegate>>,
+        flow: Flow,
+        on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        Self {
+            table,
+            flow,
+            on_close: Box::new(on_close),
+        }
+    }
+}
+
+impl RenderOnce for PacketPane {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let flow_summary = format!("{} ({:?})", self.flow.endpoints, self.flow.protocol);
+
+        div()
+            .flex()
+            .flex_col()
+            .bg(rgb(0x202020))
+            .border_t_1()
+            .border_color(rgb(0x444444))
+            .size_full()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .py_1()
+                    .px_2()
+                    .bg(rgb(0x252525))
+                    .border_b_1()
+                    .border_color(rgb(0x444444))
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0xffffff))
+                            .child("Flow Packets"),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(0xaaaaaa))
+                            .child(flow_summary),
+                    )
+                    .child(
+                        Button::new("flow_close_button")
+                            .icon(IconName::WindowClose)
+                            .on_click(self.on_close),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(Table::new(&self.table)),
+            )
+    }
+}
 
 pub struct PacketTableDelegate {
     pub packets: Vec<Packet>,

@@ -40,7 +40,7 @@ impl Layout {
 
 impl RenderOnce for Layout {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let top_panel_content = div()
+        let header_content = div()
             .flex()
             .flex_col()
             .size_full()
@@ -49,23 +49,21 @@ impl RenderOnce for Layout {
             .child(self.header)
             .child(div().flex_1().overflow_hidden().child(self.main));
 
-        let mut container = v_resizable("main_split")
-            .with_state(&self.resizable_state)
-            .child(
-                resizable_panel()
-                    .size(px(DEFAULT_BOTTOM_PANE_HEIGHT))
-                    .child(top_panel_content),
-            );
+        let content = if let Some(bottom) = self.bottom {
+            v_resizable("main_split")
+                .with_state(&self.resizable_state)
+                .child(resizable_panel().child(header_content))
+                .child(
+                    resizable_panel()
+                        .size(px(DEFAULT_BOTTOM_PANE_HEIGHT))
+                        .size_range(px(MIN_BOTTOM_PANE_HEIGHT)..px(f32::MAX))
+                        .child(bottom),
+                )
+                .into_any_element()
+        } else {
+            header_content.into_any_element()
+        };
 
-        if let Some(bottom) = self.bottom {
-            container = container.child(
-                resizable_panel()
-                    .size(px(DEFAULT_BOTTOM_PANE_HEIGHT))
-                    .size_range(px(MIN_BOTTOM_PANE_HEIGHT)..px(f32::MAX))
-                    .child(bottom),
-            );
-        }
-
-        div().size_full().child(container)
+        div().size_full().child(content)
     }
 }

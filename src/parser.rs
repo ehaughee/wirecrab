@@ -29,10 +29,10 @@ where
         match reader.next() {
             Ok((offset, block)) => {
                 bytes_read += offset;
-                // Report progress every ~100KB
-                if bytes_read - last_progress_update > 100_000 {
-                     on_progress(bytes_read as f32 / file_size as f32);
-                     last_progress_update = bytes_read;
+                // Report progress every ~1KB
+                if bytes_read - last_progress_update > 1_000 {
+                    on_progress(bytes_read as f32 / file_size as f32);
+                    last_progress_update = bytes_read;
                 }
                 match block {
                     PcapBlockOwned::NG(Block::SectionHeader(ref _shb)) => {
@@ -208,20 +208,5 @@ where
             Err(e) => eprintln!("Error while reading: {:?}", e),
         }
     }
-    // Avoid dumping all packet bytes; print a concise summary instead.
-    println!("Unique flows: {}", flows.len());
-    // for (key, flow) in flows.iter().take(20) {
-    //     let bytes: usize = flow.packets.iter().map(|p| p.len()).sum();
-    //     println!(
-    //         "{:?} -> packets={}, bytes={}",
-    //         key,
-    //         flow.packets.len(),
-    //         bytes
-    //     );
-    // }
-    // if flows.len() > 20 {
-    //     println!("... {} more flows not shown", flows.len() - 20);
-    // }
-
     return Ok(flows);
 }

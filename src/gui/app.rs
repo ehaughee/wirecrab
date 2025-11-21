@@ -1,21 +1,20 @@
 use crate::flow::*;
 use crate::gui::assets::Assets;
-use crate::gui::components::{FlowTableDelegate, PacketTableDelegate, SearchBar};
+use crate::gui::components::{FlowTableDelegate, PacketPane, PacketTableDelegate, SearchBar};
+use crate::gui::layout::Layout;
 use crate::loader::{LoadStatus, Loader};
 use gpui::AsyncApp;
 use gpui::*;
-use gpui_component::button::Button;
+use gpui_component::Root;
 use gpui_component::input::{InputEvent, InputState};
-use gpui_component::resizable::{ResizableState, resizable_panel, v_resizable};
+use gpui_component::progress::Progress;
+use gpui_component::resizable::ResizableState;
 use gpui_component::table::{Table, TableEvent, TableState};
-use gpui_component::{IconName, Root};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-const MIN_PACKET_PANE_HEIGHT: f32 = 160.0;
-const DEFAULT_PACKET_PANE_HEIGHT: f32 = 320.0;
-
 pub struct WirecrabApp {
+    path: String,
     flows: HashMap<FlowKey, Flow>,
     loader: Option<Loader>,
     loading_progress: Option<f32>,
@@ -30,7 +29,7 @@ pub struct WirecrabApp {
 impl WirecrabApp {
     fn new(path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search_input = SearchBar::create_state(window, cx);
-        let loader = Loader::new(path);
+        let loader = Loader::new(path.clone());
         let resizable_state = cx.new(|_| ResizableState::default());
 
         // Start with empty flows
@@ -86,6 +85,7 @@ impl WirecrabApp {
         .detach();
 
         Self {
+            path: path.clone().to_string_lossy().to_string(),
             flows,
             loader: Some(loader),
             loading_progress: Some(0.0),
@@ -225,90 +225,38 @@ impl WirecrabApp {
             }
         }
     }
-
-    fn render_packet_pane_content(&mut self, cx: &mut Context<Self>) -> Option<Div> {
-        let packet_table = self.packet_table.clone()?;
-        let selected_flow = self.current_flow()?;
-        let flow_summary = format!("{} ({:?})", selected_flow.endpoints, selected_flow.protocol);
-
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .bg(rgb(0x202020))
-                .border_t_1()
-                .border_color(rgb(0x444444))
-                .size_full()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap_2()
-                        .p_1()
-                        .bg(rgb(0x252525))
-                        .border_b_1()
-                        .border_color(rgb(0x444444))
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(rgb(0xffffff))
-                                .child("Flow Packets"),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(rgb(0xaaaaaa))
-                                .child(flow_summary),
-                        )
-                        .child(
-                            Button::new("flow_close_button")
-                                .icon(IconName::WindowClose)
-                                .on_click(cx.listener(|view, _event, _window, cx| {
-                                    view.selected_flow = None;
-                                    view.packet_table = None;
-                                    cx.notify();
-                                })),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .overflow_hidden()
-                        .child(Table::new(&packet_table)),
-                ),
-        )
-    }
 }
 
 impl Render for WirecrabApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if let Some(progress) = self.loading_progress {
+            let progress_percent = progress * 100.0;
             return div()
                 .flex()
                 .flex_col()
                 .items_center()
                 .justify_center()
-                .w_full()
-                .h_full()
+                .size_full()
                 .bg(rgb(0x1e1e1e))
                 .text_color(rgb(0xffffff))
-                .child(div().text_xl().mb_4().child("Loading PCAP file..."))
                 .child(
-                    div().w_64().h_4().bg(rgb(0x333333)).rounded_md().child(
-                        div()
-                            .h_full()
-                            .bg(rgb(0x4a90e2))
-                            .rounded_md()
-                            .w(px(256.0 * progress)),
-                    ),
+                    div()
+                        .text_xl()
+                        .mb_4()
+                        .child(format!("Loading {}...", self.path)),
+                )
+                .child(
+                    div()
+                        .w(window.bounds().size.width * 0.8)
+                        .h_4()
+                        .child(Progress::new().value(progress_percent).size_full()),
                 )
                 .child(
                     div()
                         .mt_2()
                         .text_sm()
                         .text_color(rgb(0xaaaaaa))
-                        .child(format!("{:.0}%", progress * 100.0)),
+                        .child(format!("{:.0}%", progress_percent)),
                 );
         }
 
@@ -318,8 +266,7 @@ impl Render for WirecrabApp {
                 .flex_col()
                 .items_center()
                 .justify_center()
-                .w_full()
-                .h_full()
+                .size_full()
                 .bg(rgb(0x1e1e1e))
                 .text_color(rgb(0xff5555))
                 .child(div().text_xl().mb_4().child("Error loading file"))
@@ -327,7 +274,7 @@ impl Render for WirecrabApp {
         }
 
         let flows_vec = self.filtered_flows(cx);
-        let filtered_count = flows_vec.len();
+        // let filtered_count = flows_vec.len();
         let selected_flow = self.selected_flow;
 
         self.flow_table.update(cx, move |table, _cx| {
@@ -336,20 +283,21 @@ impl Render for WirecrabApp {
             delegate.selected_flow = selected_flow;
         });
 
-        let total_flows = self.flows.len();
+        // let total_flows = self.flows.len();
         let current_flow = self.current_flow().cloned();
         self.sync_packet_table(current_flow.as_ref(), window, cx);
 
         let header = div()
-                                    .text_xl()
-                                    .p_1()
-                                    .bg(rgb(0x252525))
-                                    .border_b_1()
-                                    .border_color(rgb(0x444444))
-                                    .child(format!(
-                                        "Wirecrab: {} flows ({} shown)",
-                                        total_flows, filtered_count
-            ))
+            // .text_xl()
+            // .py_1()
+            // .px_2()
+            // .bg(rgb(0x252525))
+            // .border_b_1()
+            // .border_color(rgb(0x444444))
+            // .child(format!(
+            //     "Wirecrab: {} flows ({} shown)",
+            //     total_flows, filtered_count
+            // ))
             .child(SearchBar::new(&self.search_input));
 
         let main = Table::new(&self.flow_table);
@@ -358,11 +306,22 @@ impl Render for WirecrabApp {
             .header(header)
             .main(main);
 
-        if let Some(packet_pane) = self.render_packet_pane_content(cx) {
-            layout = layout.bottom(packet_pane);
+        match self.current_flow() {
+            Some(flow) => {
+                layout = layout.bottom(PacketPane::new(
+                    self.packet_table.as_ref().unwrap().clone(),
+                    flow.clone(),
+                    cx.listener(|view, _event, _window, cx| {
+                        view.selected_flow = None;
+                        view.packet_table = None;
+                        cx.notify();
+                    }),
+                ));
+            }
+            None => {}
         }
 
-        div().child(layout)
+        div().size_full().child(layout)
     }
 }
 
