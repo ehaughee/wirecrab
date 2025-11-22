@@ -5,7 +5,8 @@ use ratatui::{
 };
 use std::collections::{HashMap, HashSet};
 
-use crate::flow::{Flow, FlowKey, IPAddress, Protocol};
+use crate::flow::filter::{FlowFilter, FlowFormatter};
+use crate::flow::{Flow, FlowKey};
 use crate::tui::theme::flexoki;
 use crate::tui::to_color;
 
@@ -91,75 +92,68 @@ impl PacketTableState {
     }
 
     pub fn get_filtered_table_data(&mut self, filter: &str) -> (Vec<Row>, Vec<Constraint>) {
-        // Create mapping and rows separately to avoid borrowing conflicts
         let mut rows = Vec::new();
         let mut row_to_flow_map = Vec::new();
-        let filter_lower = filter.to_lowercase();
+        let flow_filter = FlowFilter::new(filter, self.start_timestamp);
+        let timestamp_origin = flow_filter.timestamp_origin();
 
-        for flow_key in &self.flow_order.clone() {
-            if let Some(flow) = self.flows.get(flow_key) {
-                // Determine source (initiator) and destination
-                let (src_endpoint, dst_endpoint) = (flow.source, flow.destination);
+        for flow_key in self.flow_order.clone() {
+            if let Some(flow) = self.flows.get(&flow_key) {
+                if !flow_filter.matches_flow(flow) {
+                    continue;
+                }
 
-                // Check if this flow matches the filter
-                let timestamp_str = format_timestamp(flow.timestamp, self.start_timestamp);
-                let endpoint_a_ip = format_ip_address(&src_endpoint.ip);
-                let endpoint_b_ip = format_ip_address(&dst_endpoint.ip);
-                let endpoint_a_port = src_endpoint.port.to_string();
-                let endpoint_b_port = dst_endpoint.port.to_string();
-                let protocol_str = format_protocol(&flow.protocol);
+                let timestamp_str =
+                    FlowFormatter::timestamp(flow.timestamp, timestamp_origin);
+                let endpoint_a_ip = FlowFormatter::ip_address(&flow.source.ip);
+                let endpoint_b_ip = FlowFormatter::ip_address(&flow.destination.ip);
+                let endpoint_a_port = FlowFormatter::port(flow.source.port);
+                let endpoint_b_port = FlowFormatter::port(flow.destination.port);
+                let protocol_str = FlowFormatter::protocol(&flow.protocol);
+                let total_bytes: u64 = flow.packets.iter().map(|p| p.length as u64).sum();
 
-                // If filter is empty or any field contains the filter text, include this flow
-                let matches_filter = filter.is_empty()
-                    || timestamp_str.to_lowercase().contains(&filter_lower)
-                    || endpoint_a_ip.to_lowercase().contains(&filter_lower)
-                    || endpoint_b_ip.to_lowercase().contains(&filter_lower)
-                    || endpoint_a_port.to_lowercase().contains(&filter_lower)
-                    || endpoint_b_port.to_lowercase().contains(&filter_lower)
-                    || protocol_str.to_lowercase().contains(&filter_lower);
+                let main_row = Row::new(vec![
+                    Cell::from(timestamp_str),
+                    Cell::from(endpoint_a_ip),
+                    Cell::from(endpoint_a_port),
+                    Cell::from(endpoint_b_ip),
+                    Cell::from(endpoint_b_port),
+                    Cell::from(protocol_str),
+                    Cell::from(flow.packets.len().to_string()),
+                    Cell::from(total_bytes.to_string()),
+                ]);
 
-                if matches_filter {
-                    let total_bytes: u64 = flow.packets.iter().map(|p| p.length as u64).sum();
+                rows.push(main_row);
+                row_to_flow_map.push(Some(flow_key));
 
-                    // Main flow row
-                    let main_row = Row::new(vec![
-                        Cell::from(timestamp_str),
-                        Cell::from(endpoint_a_ip),
-                        Cell::from(endpoint_a_port),
-                        Cell::from(endpoint_b_ip),
-                        Cell::from(endpoint_b_port),
-                        Cell::from(protocol_str),
-                        Cell::from(flow.packets.len().to_string()),
-                        Cell::from(total_bytes.to_string()),
-                    ]);
-
-                    rows.push(main_row);
-                    row_to_flow_map.push(Some(*flow_key)); // Main flow row maps to the flow
-
-                    // If expanded, add packet detail rows
-                    if self.expanded_flows.contains(flow_key) {
-                        for (_i, packet) in flow.packets.iter().enumerate() {
-                            let packet_row = Row::new(vec![
-                                Cell::from(format!(
-                                    "  {}",
-                                    format_timestamp(packet.timestamp, self.start_timestamp)
-                                )),
-                                Cell::from(format_ip_address(&packet.src_ip)),
-                                Cell::from(
-                                    packet.src_port.map(|p| p.to_string()).unwrap_or_default(),
-                                ),
-                                Cell::from(format_ip_address(&packet.dst_ip)),
-                                Cell::from(
-                                    packet.dst_port.map(|p| p.to_string()).unwrap_or_default(),
-                                ),
-                                Cell::from(""),
-                                Cell::from(""),
-                                Cell::from(format!("{}", packet.length)),
-                            ])
-                            .style(Style::default().fg(to_color(flexoki::BASE_500)));
-                            rows.push(packet_row);
-                            row_to_flow_map.push(Some(*flow_key)); // Packet detail rows also map to their parent flow
-                        }
+                if self.expanded_flows.contains(&flow_key) {
+                    for packet in &flow.packets {
+                        let packet_row = Row::new(vec![
+                            Cell::from(format!(
+                                "  {}",
+                                FlowFormatter::timestamp(packet.timestamp, timestamp_origin)
+                            )),
+                            Cell::from(FlowFormatter::ip_address(&packet.src_ip)),
+                            Cell::from(
+                                packet
+                                    .src_port
+                                    .map(FlowFormatter::port)
+                                    .unwrap_or_default(),
+                            ),
+                            Cell::from(FlowFormatter::ip_address(&packet.dst_ip)),
+                            Cell::from(
+                                packet
+                                    .dst_port
+                                    .map(FlowFormatter::port)
+                                    .unwrap_or_default(),
+                            ),
+                            Cell::from(""),
+                            Cell::from(""),
+                            Cell::from(packet.length.to_string()),
+                        ])
+                        .style(Style::default().fg(to_color(flexoki::BASE_500)));
+                        rows.push(packet_row);
+                        row_to_flow_map.push(Some(flow_key));
                     }
                 }
             }
@@ -177,49 +171,5 @@ impl PacketTableState {
             Constraint::Length(10), // Bytes
         ];
         (rows, widths)
-    }
-}
-
-fn format_timestamp(timestamp: f64, start_timestamp: Option<f64>) -> String {
-    let ts = if let Some(start) = start_timestamp {
-        timestamp - start
-    } else {
-        timestamp
-    };
-    format!("{:.6}", ts)
-}
-
-fn format_ip_address(ip: &IPAddress) -> String {
-    match ip {
-        IPAddress::V4(addr) => format!("{}.{}.{}.{}", addr[0], addr[1], addr[2], addr[3]),
-        IPAddress::V6(addr) => {
-            format!(
-                "{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}",
-                addr[0],
-                addr[1],
-                addr[2],
-                addr[3],
-                addr[4],
-                addr[5],
-                addr[6],
-                addr[7],
-                addr[8],
-                addr[9],
-                addr[10],
-                addr[11],
-                addr[12],
-                addr[13],
-                addr[14],
-                addr[15]
-            )
-        }
-    }
-}
-
-fn format_protocol(protocol: &Protocol) -> String {
-    match protocol {
-        Protocol::TCP => "TCP".to_string(),
-        Protocol::UDP => "UDP".to_string(),
-        Protocol::Other(n) => format!("Proto-{}", n),
     }
 }

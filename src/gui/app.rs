@@ -1,3 +1,4 @@
+use crate::flow::filter::FlowFilter;
 use crate::flow::*;
 use crate::gui::assets::Assets;
 use crate::gui::components::{FlowTable, PacketTable, SearchBar};
@@ -192,30 +193,19 @@ impl WirecrabApp {
     }
 
     fn filtered_flows(&self, cx: &App) -> Vec<(FlowKey, Flow)> {
-        let search_text = self.search_bar.entity().read(cx).value().to_lowercase();
+        let search_text = self
+            .search_bar
+            .entity()
+            .read(cx)
+            .value()
+            .to_string();
+        let filter = FlowFilter::new(&search_text, self.start_timestamp);
 
-        if search_text.is_empty() {
-            self.flows.iter().map(|(k, v)| (*k, v.clone())).collect()
-        } else {
-            self.flows
-                .iter()
-                .filter(|(_, flow)| {
-                    let endpoints = [flow.source, flow.destination];
-                    endpoints
-                        .iter()
-                        .any(|endpoint| Self::endpoint_matches(*endpoint, &search_text))
-                        || format!("{:?}", flow.protocol)
-                            .to_lowercase()
-                            .contains(&search_text)
-                })
-                .map(|(k, v)| (*k, v.clone()))
-                .collect()
-        }
-    }
-
-    fn endpoint_matches(endpoint: Endpoint, needle: &str) -> bool {
-        endpoint.to_string().to_lowercase().contains(needle)
-            || endpoint.port.to_string().contains(needle)
+        self.flows
+            .iter()
+            .filter(|(_, flow)| filter.matches_flow(flow))
+            .map(|(k, v)| (*k, v.clone()))
+            .collect()
     }
 }
 
