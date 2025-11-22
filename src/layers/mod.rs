@@ -16,10 +16,10 @@ pub enum LayerType {
 }
 
 #[derive(Debug)]
-pub enum ParseResult {
+pub enum ParseResult<'a> {
     NextLayer {
         next_layer: LayerType,
-        payload: Vec<u8>,
+        payload: &'a [u8],
     },
     Final,
     Error(String),
@@ -37,7 +37,7 @@ pub struct PacketContext {
 }
 
 pub trait LayerParser: Send + Sync {
-    fn parse(&self, data: &[u8], context: &mut PacketContext) -> ParseResult;
+    fn parse<'a>(&self, data: &'a [u8], context: &mut PacketContext) -> ParseResult<'a>;
 }
 
 pub struct ParserRegistry {

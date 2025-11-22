@@ -5,7 +5,7 @@ use etherparse::{TcpHeader, UdpHeader};
 pub struct TcpParser;
 
 impl LayerParser for TcpParser {
-    fn parse(&self, data: &[u8], context: &mut PacketContext) -> ParseResult {
+    fn parse<'a>(&self, data: &'a [u8], context: &mut PacketContext) -> ParseResult<'a> {
         match TcpHeader::from_slice(data) {
             Ok((header, rest)) => {
                 context.src_port = Some(header.source_port);
@@ -31,7 +31,7 @@ impl LayerParser for TcpParser {
 pub struct UdpParser;
 
 impl LayerParser for UdpParser {
-    fn parse(&self, data: &[u8], context: &mut PacketContext) -> ParseResult {
+    fn parse<'a>(&self, data: &'a [u8], context: &mut PacketContext) -> ParseResult<'a> {
         match UdpHeader::from_slice(data) {
             Ok((header, rest)) => {
                 context.src_port = Some(header.source_port);

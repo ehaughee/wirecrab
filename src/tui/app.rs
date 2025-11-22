@@ -15,7 +15,7 @@ use ratatui::widgets::{Block, Borders, Cell, Gauge, Paragraph, Row, Table};
 use super::to_color;
 use super::widgets::PacketTableState;
 use crate::flow::{Flow, FlowKey};
-use crate::loader::{LoadStatus, Loader};
+use crate::loader::{FlowLoadController, FlowLoadStatus};
 use crate::tui::theme::flexoki;
 
 pub struct AppState {
@@ -48,7 +48,7 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut loader = Some(Loader::new(path));
+    let mut loader = FlowLoadController::new(path);
     let mut loading_progress = Some(0.0);
     let mut error_message: Option<String> = None;
 
@@ -58,26 +58,22 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         // Check loader
-        if let Some(l) = &loader {
-            let mut done = false;
-            while let Some(status) = l.try_recv() {
-                match status {
-                    LoadStatus::Progress(p) => loading_progress = Some(p),
-                    LoadStatus::Loaded(flows, start_ts) => {
-                        app = AppState::new(flows, start_ts);
-                        loading_progress = None;
-                        done = true;
-                    }
-                    LoadStatus::Error(e) => {
-                        error_message = Some(e);
-                        loading_progress = None;
-                        done = true;
-                    }
-                }
+        match loader.poll() {
+            FlowLoadStatus::Loading { progress } => {
+                loading_progress = Some(progress);
             }
-            if done {
-                loader = None;
+            FlowLoadStatus::Ready {
+                flows,
+                start_timestamp,
+            } => {
+                app = AppState::new(flows, start_timestamp);
+                loading_progress = None;
             }
+            FlowLoadStatus::Error(err) => {
+                error_message = Some(err);
+                loading_progress = None;
+            }
+            FlowLoadStatus::Idle => {}
         }
 
         terminal.draw(|f| {

@@ -4,7 +4,7 @@ use crate::gui::assets::Assets;
 use crate::gui::components::{FlowTable, PacketTable, SearchBar};
 
 use crate::gui::layout::Layout;
-use crate::loader::{LoadStatus, Loader};
+use crate::loader::{FlowLoadController, FlowLoadStatus};
 use gpui::AsyncApp;
 use gpui::*;
 use gpui_component::input::InputEvent;
@@ -18,7 +18,7 @@ use std::path::PathBuf;
 pub struct WirecrabApp {
     path: String,
     flows: HashMap<FlowKey, Flow>,
-    loader: Option<Loader>,
+    flow_loader: FlowLoadController,
     loading_progress: Option<f32>,
     error_message: Option<String>,
     selected_flow: Option<FlowKey>,
@@ -32,7 +32,7 @@ pub struct WirecrabApp {
 impl WirecrabApp {
     fn new(path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search_bar = SearchBar::create(window, cx);
-        let loader = Loader::new(path.clone());
+        let flow_loader = FlowLoadController::new(path.clone());
         let resizable_state = cx.new(|_| ResizableState::default());
 
         // Start with empty flows
@@ -94,7 +94,7 @@ impl WirecrabApp {
         Self {
             path: path.clone().to_string_lossy().to_string(),
             flows,
-            loader: Some(loader),
+            flow_loader,
             loading_progress: Some(0.0),
             error_message: None,
             selected_flow: None,
@@ -107,71 +107,44 @@ impl WirecrabApp {
     }
 
     fn check_loader(&mut self, cx: &mut Context<Self>) -> bool {
-        let mut loaded_flows = None;
-        let mut error = None;
-        let mut progress = None;
+        match self.flow_loader.poll() {
+            FlowLoadStatus::Loading { progress } => {
+                self.loading_progress = Some(progress);
+                cx.notify();
+                true
+            }
+            FlowLoadStatus::Ready {
+                flows,
+                start_timestamp,
+            } => {
+                let start_ts = start_timestamp.or_else(|| {
+                    let min_ts = flows
+                        .values()
+                        .map(|f| f.timestamp)
+                        .fold(f64::INFINITY, |a, b| a.min(b));
+                    (min_ts != f64::INFINITY).then_some(min_ts)
+                });
 
-        if let Some(loader) = &self.loader {
-            while let Some(status) = loader.try_recv() {
-                match status {
-                    LoadStatus::Progress(p) => progress = Some(p),
-                    LoadStatus::Loaded(flows, start_ts) => {
-                        loaded_flows = Some(flows);
-                        if let Some(ts) = start_ts {
-                            self.start_timestamp = Some(ts);
-                        }
-                        break;
-                    }
-                    LoadStatus::Error(e) => {
-                        error = Some(e);
-                        break;
+                if self.start_timestamp.is_none() {
+                    if let Some(ts) = start_ts {
+                        self.start_timestamp = Some(ts);
                     }
                 }
+
+                self.flows = flows;
+                self.loading_progress = None;
+                self.update_flow_table(cx);
+                cx.notify();
+                false
             }
-        } else {
-            return false;
-        }
-
-        let mut needs_notify = false;
-        let mut finished = false;
-
-        if let Some(p) = progress {
-            self.loading_progress = Some(p);
-            needs_notify = true;
-        }
-
-        if let Some(flows) = loaded_flows {
-            // If start_timestamp was not set by the loader (or is None), calculate it from flows
-            if self.start_timestamp.is_none() {
-                let min_ts = flows
-                    .values()
-                    .map(|f| f.timestamp)
-                    .fold(f64::INFINITY, |a, b| a.min(b));
-
-                if min_ts != f64::INFINITY {
-                    self.start_timestamp = Some(min_ts);
-                }
+            FlowLoadStatus::Error(error) => {
+                self.error_message = Some(error);
+                self.loading_progress = None;
+                cx.notify();
+                false
             }
-
-            self.flows = flows;
-            self.loading_progress = None;
-            self.loader = None;
-            self.update_flow_table(cx);
-            needs_notify = true;
-            finished = true;
-        } else if let Some(e) = error {
-            self.error_message = Some(e);
-            self.loading_progress = None;
-            self.loader = None;
-            needs_notify = true;
-            finished = true;
+            FlowLoadStatus::Idle => false,
         }
-
-        if needs_notify {
-            cx.notify();
-        }
-
-        !finished
     }
 
     fn update_flow_table(&mut self, cx: &mut Context<Self>) {
@@ -193,12 +166,7 @@ impl WirecrabApp {
     }
 
     fn filtered_flows(&self, cx: &App) -> Vec<(FlowKey, Flow)> {
-        let search_text = self
-            .search_bar
-            .entity()
-            .read(cx)
-            .value()
-            .to_string();
+        let search_text = self.search_bar.entity().read(cx).value().to_string();
         let filter = FlowFilter::new(&search_text, self.start_timestamp);
 
         self.flows

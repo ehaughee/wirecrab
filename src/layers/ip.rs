@@ -5,7 +5,7 @@ use etherparse::{Ipv4Header, Ipv6Header, IpNumber};
 pub struct IPv4Parser;
 
 impl LayerParser for IPv4Parser {
-    fn parse(&self, data: &[u8], context: &mut PacketContext) -> ParseResult {
+    fn parse<'a>(&self, data: &'a [u8], context: &mut PacketContext) -> ParseResult<'a> {
         match Ipv4Header::from_slice(data) {
             Ok((header, rest)) => {
                 context.src_ip = Some(IPAddress::V4(header.source));
@@ -19,7 +19,7 @@ impl LayerParser for IPv4Parser {
 
                 ParseResult::NextLayer {
                     next_layer,
-                    payload: rest.to_vec(),
+                    payload: rest,
                 }
             }
             Err(e) => ParseResult::Error(format!("IPv4 parse error: {}", e)),
@@ -30,7 +30,7 @@ impl LayerParser for IPv4Parser {
 pub struct IPv6Parser;
 
 impl LayerParser for IPv6Parser {
-    fn parse(&self, data: &[u8], context: &mut PacketContext) -> ParseResult {
+    fn parse<'a>(&self, data: &'a [u8], context: &mut PacketContext) -> ParseResult<'a> {
         match Ipv6Header::from_slice(data) {
             Ok((header, rest)) => {
                 context.src_ip = Some(IPAddress::V6(header.source));
@@ -44,7 +44,7 @@ impl LayerParser for IPv6Parser {
 
                 ParseResult::NextLayer {
                     next_layer,
-                    payload: rest.to_vec(),
+                    payload: rest,
                 }
             }
             Err(e) => ParseResult::Error(format!("IPv6 parse error: {}", e)),

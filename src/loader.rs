@@ -41,3 +41,66 @@ impl Loader {
         self.rx.try_recv().ok()
     }
 }
+
+pub enum FlowLoadStatus {
+    Loading {
+        progress: f32,
+    },
+    Ready {
+        flows: HashMap<FlowKey, Flow>,
+        start_timestamp: Option<f64>,
+    },
+    Error(String),
+    Idle,
+}
+
+pub struct FlowLoadController {
+    loader: Option<Loader>,
+    last_progress: f32,
+}
+
+impl FlowLoadController {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            loader: Some(Loader::new(path)),
+            last_progress: 0.0,
+        }
+    }
+
+    pub fn poll(&mut self) -> FlowLoadStatus {
+        if self.loader.is_none() {
+            return FlowLoadStatus::Idle;
+        }
+
+        let mut status = FlowLoadStatus::Loading {
+            progress: self.last_progress,
+        };
+
+        loop {
+            let next = match self.loader.as_ref().and_then(|loader| loader.try_recv()) {
+                Some(status) => status,
+                None => break,
+            };
+
+            match next {
+                LoadStatus::Progress(p) => {
+                    self.last_progress = p;
+                    status = FlowLoadStatus::Loading { progress: p };
+                }
+                LoadStatus::Loaded(flows, start_timestamp) => {
+                    self.loader = None;
+                    return FlowLoadStatus::Ready {
+                        flows,
+                        start_timestamp,
+                    };
+                }
+                LoadStatus::Error(error) => {
+                    self.loader = None;
+                    return FlowLoadStatus::Error(error);
+                }
+            }
+        }
+
+        status
+    }
+}

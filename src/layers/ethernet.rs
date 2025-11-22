@@ -4,7 +4,7 @@ use etherparse::{Ethernet2Header, EtherType};
 pub struct EthernetParser;
 
 impl LayerParser for EthernetParser {
-    fn parse(&self, data: &[u8], _context: &mut PacketContext) -> ParseResult {
+    fn parse<'a>(&self, data: &'a [u8], _context: &mut PacketContext) -> ParseResult<'a> {
         match Ethernet2Header::from_slice(data) {
             Ok((header, rest)) => {
                 let next_layer = match header.ether_type {
@@ -14,7 +14,7 @@ impl LayerParser for EthernetParser {
                 };
                 ParseResult::NextLayer {
                     next_layer,
-                    payload: rest.to_vec(),
+                    payload: rest,
                 }
             }
             Err(e) => ParseResult::Error(format!("Ethernet parse error: {}", e)),

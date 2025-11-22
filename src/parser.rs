@@ -77,7 +77,7 @@ where
 
                                 let mut context = PacketContext::default();
                                 let mut current_layer = LayerType::Ethernet;
-                                let mut current_data = epb_packet_data.to_vec();
+                                let mut current_data = epb_packet_data;
 
                                 loop {
                                     if let Some(parser) = registry.get(current_layer) {
