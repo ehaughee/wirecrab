@@ -44,7 +44,7 @@ pub struct Packet {
     pub dst_ip: IPAddress,
     pub src_port: Option<u16>,
     pub dst_port: Option<u16>,
-    pub length: u32,
+    pub length: u16,
     pub data: Vec<u8>,
 }
 
@@ -76,13 +76,30 @@ impl fmt::Display for Flow {
     }
 }
 
+impl Flow {
+    /// Returns the total number of bytes observed across all packets in this flow.
+    pub fn total_bytes(&self) -> usize {
+        self.packets
+            .iter()
+            .map(|packet| packet.length as usize)
+            .sum()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FlowKey {
     pub endpoints: FlowEndpoints,
     pub protocol: Protocol,
 }
 
-impl FlowKey {}
+impl FlowKey {
+    pub fn from_endpoints(source: Endpoint, destination: Endpoint, protocol: Protocol) -> Self {
+        Self {
+            endpoints: FlowEndpoints::new(source, destination),
+            protocol,
+        }
+    }
+}
 
 impl fmt::Display for IPAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

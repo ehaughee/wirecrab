@@ -1,6 +1,6 @@
 use super::{LayerParser, LayerType, PacketContext, ParseResult};
 use crate::flow::IPAddress;
-use etherparse::{Ipv4Header, Ipv6Header, IpNumber};
+use etherparse::{IpNumber, Ipv4Header, Ipv6Header};
 
 pub struct IPv4Parser;
 
@@ -10,7 +10,7 @@ impl LayerParser for IPv4Parser {
             Ok((header, rest)) => {
                 context.src_ip = Some(IPAddress::V4(header.source));
                 context.dst_ip = Some(IPAddress::V4(header.destination));
-                
+
                 let next_layer = match header.protocol {
                     IpNumber::TCP => LayerType::TCP,
                     IpNumber::UDP => LayerType::UDP,

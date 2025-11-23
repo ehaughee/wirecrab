@@ -20,7 +20,7 @@ impl LayerParser for TcpParser {
                 } else {
                     // For now, we don't have L7 parsers, so we stop here or return Unknown
                     // But to support future L7, we could return NextLayer with Unknown/L7 type
-                    ParseResult::Final 
+                    ParseResult::Final
                 }
             }
             Err(e) => ParseResult::Error(format!("TCP parse error: {}", e)),

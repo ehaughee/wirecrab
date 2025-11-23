@@ -103,14 +103,13 @@ impl PacketTableState {
                     continue;
                 }
 
-                let timestamp_str =
-                    FlowFormatter::timestamp(flow.timestamp, timestamp_origin);
+                let timestamp_str = FlowFormatter::timestamp(flow.timestamp, timestamp_origin);
                 let endpoint_a_ip = FlowFormatter::ip_address(&flow.source.ip);
                 let endpoint_b_ip = FlowFormatter::ip_address(&flow.destination.ip);
                 let endpoint_a_port = FlowFormatter::port(flow.source.port);
                 let endpoint_b_port = FlowFormatter::port(flow.destination.port);
                 let protocol_str = FlowFormatter::protocol(&flow.protocol);
-                let total_bytes: u64 = flow.packets.iter().map(|p| p.length as u64).sum();
+                let total_bytes = flow.total_bytes();
 
                 let main_row = Row::new(vec![
                     Cell::from(timestamp_str),
@@ -135,17 +134,11 @@ impl PacketTableState {
                             )),
                             Cell::from(FlowFormatter::ip_address(&packet.src_ip)),
                             Cell::from(
-                                packet
-                                    .src_port
-                                    .map(FlowFormatter::port)
-                                    .unwrap_or_default(),
+                                packet.src_port.map(FlowFormatter::port).unwrap_or_default(),
                             ),
                             Cell::from(FlowFormatter::ip_address(&packet.dst_ip)),
                             Cell::from(
-                                packet
-                                    .dst_port
-                                    .map(FlowFormatter::port)
-                                    .unwrap_or_default(),
+                                packet.dst_port.map(FlowFormatter::port).unwrap_or_default(),
                             ),
                             Cell::from(""),
                             Cell::from(""),

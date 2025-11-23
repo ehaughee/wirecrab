@@ -2,7 +2,7 @@ pub mod flexoki {
     // Base colors
     pub const BLACK: u32 = 0x100F0F;
     pub const PAPER: u32 = 0xFFFCF0;
-    
+
     // UI shades (Dark mode)
     pub const BASE_950: u32 = 0x1C1B1A;
     pub const BASE_900: u32 = 0x282726;
@@ -20,7 +20,7 @@ pub mod flexoki {
     // Accents
     pub const RED_400: u32 = 0xD14D41;
     pub const RED_600: u32 = 0xAF3029;
-    
+
     pub const ORANGE_400: u32 = 0xDA702C;
     pub const ORANGE_600: u32 = 0xBC5215;
 

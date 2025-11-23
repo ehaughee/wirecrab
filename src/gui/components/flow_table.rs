@@ -161,16 +161,12 @@ impl FlowTableDelegate {
                 ColumnSort::Default => {}
             },
             "bytes" => match sort {
-                ColumnSort::Ascending => self.flows.sort_by(|a, b| {
-                    let a_bytes: u64 = a.1.packets.iter().map(|p| p.length as u64).sum();
-                    let b_bytes: u64 = b.1.packets.iter().map(|p| p.length as u64).sum();
-                    a_bytes.cmp(&b_bytes)
-                }),
-                ColumnSort::Descending => self.flows.sort_by(|a, b| {
-                    let a_bytes: u64 = a.1.packets.iter().map(|p| p.length as u64).sum();
-                    let b_bytes: u64 = b.1.packets.iter().map(|p| p.length as u64).sum();
-                    b_bytes.cmp(&a_bytes)
-                }),
+                ColumnSort::Ascending => self
+                    .flows
+                    .sort_by(|a, b| a.1.total_bytes().cmp(&b.1.total_bytes())),
+                ColumnSort::Descending => self
+                    .flows
+                    .sort_by(|a, b| b.1.total_bytes().cmp(&a.1.total_bytes())),
                 ColumnSort::Default => {}
             },
             _ => {}
@@ -231,10 +227,7 @@ impl TableDelegate for FlowTableDelegate {
             "destination" => flow.destination.to_string(),
             "destination_port" => flow.destination.port.to_string(),
             "packets" => flow.packets.len().to_string(),
-            "bytes" => {
-                let total: u64 = flow.packets.iter().map(|p| p.length as u64).sum();
-                total.to_string()
-            }
+            "bytes" => flow.total_bytes().to_string(),
             _ => String::new(),
         };
 

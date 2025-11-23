@@ -112,20 +112,18 @@ where
                                 ) {
                                     let src_ep = Endpoint::new(src_ip, src_port);
                                     let dst_ep = Endpoint::new(dst_ip, dst_port);
-                                    let endpoints = FlowEndpoints::new(src_ep, dst_ep);
-                                    let key = FlowKey {
-                                        endpoints,
-                                        protocol,
-                                    };
+                                    let key = FlowKey::from_endpoints(src_ep, dst_ep, protocol);
 
                                     // Collect packet data per flow, creating a new flow if one does not exist for this 5-tuple
+                                    let packet_length =
+                                        u16::try_from(epb_packet_data.len()).unwrap_or(u16::MAX);
                                     let packet = Packet {
                                         timestamp,
                                         src_ip,
                                         dst_ip,
                                         src_port: Some(src_port),
                                         dst_port: Some(dst_port),
-                                        length: epb_packet_data.len() as u32,
+                                        length: packet_length,
                                         data: epb_packet_data.to_vec(),
                                     };
 

@@ -1,5 +1,5 @@
 use super::{LayerParser, LayerType, PacketContext, ParseResult};
-use etherparse::{Ethernet2Header, EtherType};
+use etherparse::{EtherType, Ethernet2Header};
 
 pub struct EthernetParser;
 

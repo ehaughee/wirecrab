@@ -19,7 +19,7 @@ classDiagram
     }
     class Packet {
         +f64 timestamp
-        +u32 length
+        +u16 length
         +Vec~u8~ data
         +IPAddress src_ip
         +IPAddress dst_ip
@@ -54,8 +54,8 @@ classDiagram
     FlowEndpoints *-- Endpoint
 ```
 
-- **Packet**: Represents a single captured packet with timestamp, length, and raw data.
-- **Flow**: Represents a bidirectional stream of packets between two endpoints (IP:Port pairs). It aggregates individual `Packet`s. It explicitly tracks `source` and `destination` to identify the initiator.
+- **Packet**: Represents a single captured packet with timestamp, length, and raw data. Length is stored as a saturated `u16` (pcap provides up to `u32`) because the UI panes only need 64 KB windows of data, and the raw bytes are kept alongside it for display.
+- **Flow**: Represents a bidirectional stream of packets between two endpoints (IP:Port pairs). It aggregates individual `Packet`s, tracks the initiating endpoint, and exposes helpers such as `total_bytes()` for lazy aggregation in tables.
 - **FlowKey**: A canonical key used to identify a flow, consisting of sorted endpoints and the protocol. This ensures packets from A->B and B->A map to the same flow.
 - **PacketContext**: A transient structure used during parsing to accumulate metadata (IPs, ports, flags) as the packet traverses different protocol layers.
 
