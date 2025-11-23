@@ -1,9 +1,9 @@
 use crate::flow::filter::FlowFilter;
 use crate::flow::*;
 use crate::gui::assets::Assets;
-use crate::gui::components::{FlowTable, PacketTable, SearchBar};
+use crate::gui::components::{FlowTable, PacketBytesView, PacketTable, SearchBar};
 
-use crate::gui::layout::Layout;
+use crate::gui::layout::{BottomSplit, Layout};
 use crate::loader::{FlowLoadController, FlowLoadStatus};
 use gpui::AsyncApp;
 use gpui::*;
@@ -26,7 +26,9 @@ pub struct WirecrabApp {
     flow_table: FlowTable,
     packet_table: Option<PacketTable>,
     resizable_state: Entity<ResizableState>,
+    detail_split_state: Entity<ResizableState>,
     start_timestamp: Option<f64>,
+    selected_packet: Option<Packet>,
 }
 
 impl WirecrabApp {
@@ -34,6 +36,7 @@ impl WirecrabApp {
         let search_bar = SearchBar::create(window, cx);
         let flow_loader = FlowLoadController::new(path.clone());
         let resizable_state = cx.new(|_| ResizableState::default());
+        let detail_split_state = cx.new(|_| ResizableState::default());
 
         // Start with empty flows
         let flows = HashMap::new();
@@ -102,7 +105,9 @@ impl WirecrabApp {
             flow_table,
             packet_table: None,
             resizable_state,
+            detail_split_state,
             start_timestamp: None,
+            selected_packet: None,
         }
     }
 
@@ -163,6 +168,29 @@ impl WirecrabApp {
 
     fn select_flow(&mut self, flow_key: FlowKey) {
         self.selected_flow = Some(flow_key);
+        self.selected_packet = None;
+    }
+
+    fn subscribe_packet_table(
+        &mut self,
+        packet_table: &PacketTable,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.subscribe_in(
+            packet_table.entity(),
+            window,
+            |view, table, event, _window, cx| {
+                if let TableEvent::SelectRow(row_ix) = event {
+                    let table_state = table.read(cx);
+                    let packet = table_state.delegate().packets.get(*row_ix).cloned();
+
+                    view.selected_packet = packet;
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
     }
 
     fn filtered_flows(&self, cx: &App) -> Vec<(FlowKey, Flow)> {
@@ -242,13 +270,16 @@ impl Render for WirecrabApp {
                 if let Some(packet_table) = &mut self.packet_table {
                     packet_table.update(flow, self.start_timestamp, cx);
                 } else {
-                    self.packet_table =
-                        Some(PacketTable::create(window, cx, flow, self.start_timestamp));
+                    let packet_table = PacketTable::create(window, cx, flow, self.start_timestamp);
+                    self.subscribe_packet_table(&packet_table, window, cx);
+                    self.packet_table = Some(packet_table);
                     self.resizable_state = cx.new(|_| ResizableState::default());
+                    self.detail_split_state = cx.new(|_| ResizableState::default());
                 }
             }
             None => {
                 self.packet_table = None;
+                self.selected_packet = None;
             }
         }
 
@@ -266,13 +297,27 @@ impl Render for WirecrabApp {
             let close_handler = cx.listener(|app: &mut WirecrabApp, &_event: &(), _window, cx| {
                 app.selected_flow = None;
                 app.packet_table = None;
+                app.selected_packet = None;
                 cx.notify();
             });
 
-            layout =
-                layout.bottom_closable(header_content, packet_table.clone(), move |window, cx| {
-                    close_handler(&(), window, cx);
-                });
+            let bytes_view = PacketBytesView::new(
+                self.selected_packet
+                    .as_ref()
+                    .map(|packet| packet.data.as_slice()),
+            );
+
+            let split = BottomSplit::new(
+                "packet_detail_split",
+                self.detail_split_state.clone(),
+                packet_table.clone(),
+                bytes_view,
+            )
+            .left_size(px(420.0))
+            .left_range(px(280.0)..Pixels::MAX)
+            .right_range(px(240.0)..Pixels::MAX);
+
+            layout = layout.bottom_closable_split(header_content, split, close_handler);
         }
 
         div().size_full().child(layout)

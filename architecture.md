@@ -1,3 +1,14 @@
+- **Layout System**:
+    - `Layout` composes a header, main content, and an optional closable bottom section. The bottom section currently hosts a `BottomSplit` with the packet table on the left and the packet-bytes pane on the right.
+    - Close behavior is implemented with GPUI listeners. When the close button fires, the listener clears the selected flow/packets and the UI collapses back to the two-pane layout.
+    - `BottomSplit` reuses `ResizableState` so pane widths/heights persist across renders, mirroring the UX of native inspector panes.
+### File Loading Lifecycle (`src/loader.rs`)
+
+- **`Loader`**: Spawns a background thread that runs `parser::parse_pcap`, pushing `LoadStatus::Progress`, `::Loaded`, or `::Error` messages through an `mpsc` channel.
+- **`FlowLoadController`**: Owns the loader and exposes a non-blocking `poll` API that returns a `FlowLoadStatus`. It keeps the latest progress percentage so UIs can render determinate progress bars while the worker thread streams updates.
+- **GUI Flow**: `WirecrabApp` schedules a periodic `check_loader` task via `schedule_update`. Once `FlowLoadStatus::Ready` is observed, the flows map and optional `start_timestamp` are stored, the loader is dropped, and subsequent polls return `Idle`.
+- **TUI Flow**: The TUI main loop polls the same controller at the top of every tick before handling input, enabling consistent progress/error reporting without blocking the terminal UI.
+
 # Wirecrab Architecture
 
 Wirecrab is a packet analysis tool written in Rust. It supports parsing PCAP files and visualizing the data through two different user interfaces: a Terminal User Interface (TUI) and a Graphical User Interface (GUI).
