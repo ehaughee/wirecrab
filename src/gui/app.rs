@@ -6,12 +6,14 @@ use crate::gui::layout::{BottomSplit, Layout};
 use crate::loader::{FlowLoadController, FlowLoadStatus};
 use gpui::AsyncApp;
 use gpui::*;
+use gpui_component::alert::Alert;
 use gpui_component::button::Button;
+use gpui_component::group_box::GroupBox;
 use gpui_component::input::InputEvent;
 use gpui_component::progress::Progress;
 use gpui_component::resizable::ResizableState;
 use gpui_component::table::TableEvent;
-use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Root};
+use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Root, StyledExt};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -356,52 +358,106 @@ impl WirecrabApp {
         self.flows.clear_selection();
         self.detail_pane.close(cx);
     }
+
+    fn render_centered_panel(
+        &self,
+        cx: &mut Context<Self>,
+        card: impl IntoElement,
+    ) -> Div {
+        div()
+            .size_full()
+            .bg(cx.theme().colors.background)
+            .text_color(cx.theme().colors.foreground)
+            .flex()
+            .items_center()
+            .justify_center()
+            .p_6()
+            .child(div().w_full().max_w(px(480.0)).child(card))
+    }
 }
 
 impl Render for WirecrabApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if let Some(progress) = self.loader.progress() {
-            let progress_percent = progress * 100.0;
-            return div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .size_full()
-                .bg(cx.theme().colors.background)
-                .text_color(cx.theme().colors.foreground)
+            let progress_percent = (progress * 100.0).clamp(0.0, 100.0);
+
+            let progress_card = GroupBox::new()
+                .id("loader_progress_card")
+                .fill()
+                .title("Capture progress")
                 .child(
                     div()
-                        .text_xl()
-                        .mb_4()
-                        .child(format!("Loading {}...", self.path)),
-                )
-                .child(
-                    div()
-                        .w(window.bounds().size.width * 0.8)
-                        .h_4()
-                        .child(Progress::new().value(progress_percent).size_full()),
-                )
-                .child(
-                    div()
-                        .mt_2()
-                        .text_sm()
-                        .text_color(cx.theme().colors.muted_foreground)
-                        .child(format!("{:.0}%", progress_percent)),
+                        .flex()
+                        .flex_col()
+                        .gap_4()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .text_lg()
+                                        .font_bold()
+                                        .child(format!("Loading {}", self.path)),
+                                )
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().colors.muted_foreground)
+                                        .child("Parsing flows. Large captures can take a minute."),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(div().h_4().child(Progress::new().value(progress_percent)))
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().colors.muted_foreground)
+                                        .child(format!("{progress_percent:.0}% complete")),
+                                ),
+                        ),
                 );
+
+            return self.render_centered_panel(cx, progress_card);
         }
 
         if let Some(error) = self.loader.error() {
-            return div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .size_full()
-                .bg(cx.theme().colors.background)
-                .text_color(cx.theme().colors.foreground)
-                .child(div().text_xl().mb_4().child("Error loading file"))
-                .child(div().text_sm().child(error.clone()));
+            let alert_message = format!("Wirecrab could not open {}.\n{}", self.path, error);
+
+            let error_card = GroupBox::new()
+                .id("loader_error_card")
+                .outline()
+                .title("Capture error")
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_4()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(div().text_lg().font_bold().child("Something went wrong"))
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().colors.muted_foreground)
+                                        .child("We couldn't read the capture file."),
+                                ),
+                        )
+                        .child(
+                            Alert::error("loader_error_alert", alert_message)
+                                .title("Unable to load capture"),
+                        ),
+                );
+
+            return self.render_centered_panel(cx, error_card);
         }
 
         let query = self.flow_view.query(cx);
@@ -442,10 +498,11 @@ impl Render for WirecrabApp {
                         ),
                 );
 
-            let clear_selection = cx.listener(|app: &mut WirecrabApp, &_event: &(), _window, cx| {
-                app.close_details(cx);
-                cx.notify();
-            });
+            let clear_selection =
+                cx.listener(|app: &mut WirecrabApp, &_event: &(), _window, cx| {
+                    app.close_details(cx);
+                    cx.notify();
+                });
 
             let clear_button = Button::new("clear_selection_button")
                 .icon(Icon::new(IconName::CircleX))
