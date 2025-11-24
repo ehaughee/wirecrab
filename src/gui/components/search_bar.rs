@@ -1,6 +1,6 @@
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, IconName,
+    Icon, IconName,
     input::{Input, InputState},
 };
 
@@ -25,20 +25,11 @@ impl SearchBar {
 }
 
 impl RenderOnce for SearchBar {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        div()
-            .flex()
-            .items_center()
-            .p_1()
-            .bg(cx.theme().colors.secondary)
-            .border_b_1()
-            .border_color(cx.theme().colors.border)
-            .child(
-                div().flex_1().child(
-                    Input::new(&self.input_state)
-                        .prefix(Icon::new(IconName::Search))
-                        .cleanable(true),
-                ),
-            )
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        div().flex().flex_1().items_center().child(
+            Input::new(&self.input_state)
+                .prefix(Icon::new(IconName::Search))
+                .cleanable(true),
+        )
     }
 }

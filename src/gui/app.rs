@@ -1,16 +1,17 @@
 use crate::flow::filter::FlowFilter;
 use crate::flow::*;
 use crate::gui::assets::Assets;
-use crate::gui::components::{FlowTable, PacketBytesView, PacketTable, SearchBar};
+use crate::gui::components::{FlowTable, PacketBytesView, PacketTable, SearchBar, Toolbar};
 use crate::gui::layout::{BottomSplit, Layout};
 use crate::loader::{FlowLoadController, FlowLoadStatus};
 use gpui::AsyncApp;
 use gpui::*;
+use gpui_component::button::Button;
 use gpui_component::input::InputEvent;
 use gpui_component::progress::Progress;
 use gpui_component::resizable::ResizableState;
 use gpui_component::table::TableEvent;
-use gpui_component::{ActiveTheme, Root};
+use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Root};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -73,6 +74,10 @@ impl FlowStore {
 
     fn start_timestamp(&self) -> Option<f64> {
         self.start_timestamp
+    }
+
+    fn total_flows(&self) -> usize {
+        self.flows.len()
     }
 }
 
@@ -160,7 +165,7 @@ impl FlowView {
         self.search_bar.entity().read(cx).value().to_string()
     }
 
-    fn header(&self) -> SearchBar {
+    fn search_bar(&self) -> SearchBar {
         self.search_bar.clone()
     }
 
@@ -416,8 +421,48 @@ impl Render for WirecrabApp {
             self.detail_pane.close(cx);
         }
 
+        let toolbar = {
+            let flow_count = self.flows.total_flows();
+            let file_info = div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(Icon::new(IconName::FolderOpen))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_0()
+                        .child(div().text_sm().child(self.path.clone()))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().colors.muted_foreground)
+                                .child(format!("{flow_count} flows")),
+                        ),
+                );
+
+            let clear_selection = cx.listener(|app: &mut WirecrabApp, &_event: &(), _window, cx| {
+                app.close_details(cx);
+                cx.notify();
+            });
+
+            let clear_button = Button::new("clear_selection_button")
+                .icon(Icon::new(IconName::CircleX))
+                .label("Clear selection")
+                .disabled(selected_flow.is_none())
+                .on_click(move |_event, window, cx| {
+                    clear_selection(&(), window, cx);
+                });
+
+            Toolbar::new()
+                .left(file_info)
+                .center(self.flow_view.search_bar())
+                .right(clear_button)
+        };
+
         let mut layout = Layout::new(self.main_split_state.clone())
-            .header(self.flow_view.header())
+            .header(toolbar)
             .main(self.flow_view.table());
 
         if let (Some(flow), Some(packet_table)) =
