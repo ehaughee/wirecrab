@@ -17,6 +17,7 @@ use super::widgets::PacketTableState;
 use crate::flow::{Flow, FlowKey};
 use crate::loader::{FlowLoadController, FlowLoadStatus};
 use crate::tui::theme::flexoki;
+use tracing::{debug, info, warn};
 
 pub struct AppState {
     packet_table: PacketTableState,
@@ -42,6 +43,7 @@ impl AppState {
 }
 
 pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    info!(path = ?path, "Starting TUI application");
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, terminal::EnterAlternateScreen)?;
@@ -61,6 +63,7 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         match loader.poll() {
             FlowLoadStatus::Loading { progress } => {
                 loading_progress = Some(progress);
+                debug!(progress, "TUI loader progress");
             }
             FlowLoadStatus::Ready {
                 flows,
@@ -68,10 +71,12 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             } => {
                 app = AppState::new(flows, start_timestamp);
                 loading_progress = None;
+                info!("TUI loader ready");
             }
             FlowLoadStatus::Error(err) => {
                 error_message = Some(err);
                 loading_progress = None;
+                warn!("TUI loader failed");
             }
             FlowLoadStatus::Idle => {}
         }
@@ -176,6 +181,7 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
                 if key.kind == KeyEventKind::Press {
                     if loading_progress.is_some() || error_message.is_some() {
                         if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
+                            info!("TUI quit requested while loading/error state");
                             break;
                         }
                     } else if app.filter_mode {
@@ -183,11 +189,13 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
                         match key.code {
                             KeyCode::Esc => {
                                 app.filter_mode = false;
+                                debug!("Exited filter mode");
                             }
                             KeyCode::Enter => {
                                 app.filter_mode = false;
                                 // Reset table selection when filter changes
                                 app.table_state.select(Some(0));
+                                debug!("Applied filter text");
                             }
                             KeyCode::Backspace => {
                                 app.filter.pop();
@@ -200,18 +208,25 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         // Handle normal navigation mode
                         match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => break,
+                            KeyCode::Char('q') | KeyCode::Esc => {
+                                info!("TUI quit requested");
+                                break;
+                            }
                             KeyCode::Char('/') => {
                                 app.filter_mode = true;
+                                debug!("Entered filter mode");
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                app.packet_table.next_flow(&mut app.table_state)
+                                app.packet_table.next_flow(&mut app.table_state);
+                                debug!("Moved selection down");
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
-                                app.packet_table.previous_flow(&mut app.table_state)
+                                app.packet_table.previous_flow(&mut app.table_state);
+                                debug!("Moved selection up");
                             }
                             KeyCode::Enter | KeyCode::Char(' ') => {
-                                app.packet_table.toggle_selected_flow(&app.table_state)
+                                app.packet_table.toggle_selected_flow(&app.table_state);
+                                debug!("Toggled flow details");
                             }
                             _ => {}
                         }
@@ -227,5 +242,6 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), terminal::LeaveAlternateScreen)?;
+    info!("TUI application exited");
     Ok(())
 }

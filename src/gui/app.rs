@@ -14,6 +14,7 @@ use gpui_component::table::TableEvent;
 use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Root, StyledExt};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use tracing::{debug, info, warn};
 
 struct FlowStore {
     flows: HashMap<FlowKey, Flow>,
@@ -44,6 +45,7 @@ impl FlowStore {
         }
 
         self.flows = flows;
+        info!(flow_count = self.flows.len(), "Flow store updated");
     }
 
     fn filtered_flows(&self, search_text: &str) -> Vec<(FlowKey, Flow)> {
@@ -150,8 +152,11 @@ impl FlowView {
                 if let TableEvent::SelectRow(row_ix) = event {
                     let state = table_state.read(cx);
                     if let Some((key, _)) = state.delegate().flows.get(*row_ix) {
+                        debug!(row = *row_ix, flow = ?key, "Flow row selected");
                         app.on_flow_selected(*key);
                         cx.notify();
+                    } else {
+                        warn!(row = *row_ix, "Flow row selection out of bounds");
                     }
                 }
             },
@@ -236,6 +241,11 @@ impl DetailPane {
                 if let TableEvent::SelectRow(row_ix) = event {
                     let state = table.read(cx);
                     let packet = state.delegate().packets.get(*row_ix).cloned();
+                    if packet.is_some() {
+                        debug!(row = *row_ix, "Packet row selected");
+                    } else {
+                        warn!(row = *row_ix, "Packet row selection out of bounds");
+                    }
                     app.on_packet_selected(packet);
                     cx.notify();
                 }
@@ -270,6 +280,7 @@ impl DetailPane {
         self.packet_table = None;
         self.selected_packet = None;
         self.split_state = cx.new(|_| ResizableState::default());
+        debug!("Detail pane closed");
     }
 }
 
@@ -331,11 +342,13 @@ impl WirecrabApp {
                 flows,
                 start_timestamp,
             } => {
+                info!(flow_count = flows.len(), "Loader ready with parsed flows");
                 self.flows.ingest(flows, start_timestamp);
                 cx.notify();
                 false
             }
             FlowLoadStatus::Error(_) => {
+                warn!("Loader encountered an error");
                 cx.notify();
                 false
             }
@@ -344,15 +357,26 @@ impl WirecrabApp {
     }
 
     fn on_flow_selected(&mut self, flow_key: FlowKey) {
+        debug!(flow = ?flow_key, "Flow selected");
         self.flows.select_flow(flow_key);
         self.detail_pane.set_selected_packet(None);
     }
 
     fn on_packet_selected(&mut self, packet: Option<Packet>) {
+        if let Some(packet) = &packet {
+            debug!(
+                timestamp = packet.timestamp,
+                length = packet.length,
+                "Packet selected"
+            );
+        } else {
+            debug!("Packet selection cleared");
+        }
         self.detail_pane.set_selected_packet(packet);
     }
 
     fn close_details(&mut self, cx: &mut Context<Self>) {
+        debug!("Clearing flow selection and closing details");
         self.flows.clear_selection();
         self.detail_pane.close(cx);
     }
@@ -541,6 +565,7 @@ impl Render for WirecrabApp {
 
 pub fn run_ui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let app = Application::new().with_assets(Assets);
+    info!("Launching GPUI application");
 
     app.run(move |cx: &mut App| {
         gpui_component::init(cx);
@@ -559,5 +584,6 @@ pub fn run_ui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         })
         .ok();
     });
+    info!("GPUI application exited");
     Ok(())
 }

@@ -5,6 +5,8 @@ use pcap_parser::traits::{PcapNGPacketBlock, PcapReaderIterator};
 use pcap_parser::*;
 use std::collections::HashMap;
 use std::fs::File;
+use std::time::Instant;
+use tracing::{debug, error, info, trace, warn};
 
 struct InterfaceDescription {
     linktype: Linktype,
@@ -21,6 +23,7 @@ where
 {
     let file = File::open(file_path).context("Failed to open file")?;
     let file_size = file.metadata()?.len();
+    info!(path = ?file_path, size_bytes = file_size, "Starting PCAP parse");
     let mut reader = PcapNGReader::new(65536, file)
         .map_err(|e| anyhow::anyhow!(e))
         .context("Failed to create reader")?;
@@ -30,6 +33,8 @@ where
     let mut bytes_read = 0;
     let mut last_progress_update = 0;
     let mut first_packet_ts: Option<f64> = None;
+    let mut packet_count: usize = 0;
+    let start_time = Instant::now();
 
     loop {
         match reader.next() {
@@ -43,6 +48,7 @@ where
                 match block {
                     PcapBlockOwned::NG(Block::SectionHeader(ref _shb)) => {
                         // New section: reset interface tracking
+                        debug!("Encountered SectionHeader; clearing interface descriptions");
                         interfaces.clear();
                     }
                     PcapBlockOwned::NG(Block::InterfaceDescription(idb)) => {
@@ -52,14 +58,18 @@ where
                             ts_resolution: idb.if_tsresol,
                             ts_offset: idb.if_tsoffset,
                         });
+                        debug!(
+                            if_id = interfaces.len() - 1,
+                            "Registered interface description"
+                        );
                     }
                     PcapBlockOwned::NG(Block::EnhancedPacket(ref epb)) => {
                         // Validate interface id and link type
                         let if_id = epb.if_id as usize;
                         if if_id >= interfaces.len() {
-                            println!(
-                                "Warning: EPB references unknown interface id {}, skipping",
-                                if_id
+                            warn!(
+                                if_id = if_id,
+                                "EPB references unknown interface; skipping packet"
                             );
                         } else {
                             let interface = &interfaces[if_id];
@@ -144,39 +154,50 @@ where
                                     }
 
                                     flow.packets.push(packet);
+                                    packet_count += 1;
+                                    trace!(
+                                        packet_index = packet_count,
+                                        protocol = ?protocol,
+                                        src = %src_ip,
+                                        dst = %dst_ip,
+                                        src_port = src_port,
+                                        dst_port = dst_port,
+                                        length = packet_length,
+                                        "Captured packet"
+                                    );
                                 }
                             }
                         }
                     }
                     PcapBlockOwned::NG(Block::SimplePacket(_)) => {
-                        println!("unsupported block type: 'SimplePacket'")
+                        debug!("Unsupported block type: SimplePacket")
                     }
                     PcapBlockOwned::NG(Block::NameResolution(_)) => {
-                        println!("unsupported block type: 'NameResolution'")
+                        debug!("Unsupported block type: NameResolution")
                     }
                     PcapBlockOwned::NG(Block::InterfaceStatistics(_)) => {
-                        println!("unsupported block type: 'InterfaceStatistics'")
+                        debug!("Unsupported block type: InterfaceStatistics")
                     }
                     PcapBlockOwned::NG(Block::DecryptionSecrets(_)) => {
-                        println!("unsupported block type: 'DecryptionSecrets'")
+                        debug!("Unsupported block type: DecryptionSecrets")
                     }
                     PcapBlockOwned::NG(Block::Custom(_)) => {
-                        println!("unsupported block type: 'Custom'")
+                        debug!("Unsupported block type: Custom")
                     }
                     PcapBlockOwned::NG(Block::Unknown(_)) => {
-                        println!("unsupported block type: 'Unknown'")
+                        debug!("Unsupported block type: Unknown")
                     }
                     PcapBlockOwned::NG(Block::SystemdJournalExport(_)) => {
-                        println!("unsupported block type: 'SystemdJournalExport'")
+                        debug!("Unsupported block type: SystemdJournalExport")
                     }
                     PcapBlockOwned::NG(Block::ProcessInformation(_)) => {
-                        println!("unsupported block type: 'ProcessInformation'")
+                        debug!("Unsupported block type: ProcessInformation")
                     }
                     PcapBlockOwned::Legacy(_legacy_pcap_block) => {
-                        println!("unsupported block type: 'Legacy'")
+                        debug!("Unsupported block type: Legacy")
                     }
                     PcapBlockOwned::LegacyHeader(_pcap_header) => {
-                        println!("unsupported block type: 'LegacyHeader'")
+                        debug!("Unsupported block type: LegacyHeader")
                     }
                 }
                 reader.consume(offset);
@@ -185,10 +206,18 @@ where
             Err(PcapError::Incomplete(_)) => {
                 reader.refill().expect("Failed to refill reader");
             }
-            Err(e) => eprintln!("Error while reading: {:?}", e),
+            Err(e) => error!(error = ?e, "Error while reading packet data"),
         }
     }
-    return Ok((flows, first_packet_ts));
+    let elapsed = start_time.elapsed();
+    info!(
+        path = ?file_path,
+        packets = packet_count,
+        flows = flows.len(),
+        elapsed_ms = elapsed.as_millis(),
+        "Completed PCAP parse"
+    );
+    Ok((flows, first_packet_ts))
 }
 
 fn calculate_ts_unit(resolution: u8) -> u64 {

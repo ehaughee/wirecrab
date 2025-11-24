@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
+use tracing::{error, info, trace};
 
 pub enum LoadStatus {
     Progress(f32),
@@ -19,16 +20,20 @@ impl Loader {
     pub fn new(path: PathBuf) -> Self {
         let (tx, rx) = mpsc::channel();
         let path_clone = path.clone();
+        info!(path = ?path_clone, "Spawning loader thread");
         thread::spawn(move || {
             let result = parser::parse_pcap(&path_clone, |progress| {
+                trace!(progress, "Parser progress update");
                 let _ = tx.send(LoadStatus::Progress(progress));
             });
 
             match result {
                 Ok((flows, start_ts)) => {
+                    info!(path = ?path_clone, flows = flows.len(), "PCAP parsed; sending results");
                     let _ = tx.send(LoadStatus::Loaded(flows, start_ts));
                 }
                 Err(e) => {
+                    error!(path = ?path_clone, error = ?e, "Failed to parse PCAP");
                     let _ = tx.send(LoadStatus::Error(e.to_string()));
                 }
             }
@@ -85,10 +90,12 @@ impl FlowLoadController {
             match next {
                 LoadStatus::Progress(p) => {
                     self.last_progress = p;
+                    trace!(progress = p, "Loader received progress update");
                     status = FlowLoadStatus::Loading { progress: p };
                 }
                 LoadStatus::Loaded(flows, start_timestamp) => {
                     self.loader = None;
+                    info!(flows = flows.len(), "Loader completed successfully");
                     return FlowLoadStatus::Ready {
                         flows,
                         start_timestamp,
@@ -96,6 +103,7 @@ impl FlowLoadController {
                 }
                 LoadStatus::Error(error) => {
                     self.loader = None;
+                    error!(error = %error, "Loader encountered an error");
                     return FlowLoadStatus::Error(error);
                 }
             }
