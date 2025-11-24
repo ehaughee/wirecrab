@@ -66,6 +66,8 @@ impl PacketTable {
 
 impl RenderOnce for PacketTable {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let table = Table::new(&self.state).bordered(false);
+
         div()
             .flex()
             .flex_col()
@@ -80,7 +82,7 @@ impl RenderOnce for PacketTable {
                     .rounded_none()
                     .border_1()
                     .border_color(cx.theme().colors.border)
-                    .child(Table::new(&self.state).bordered(false)),
+                    .child(div().size_full().child(table)),
             )
     }
 }

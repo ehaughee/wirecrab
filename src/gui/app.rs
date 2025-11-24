@@ -6,9 +6,7 @@ use crate::gui::layout::{BottomSplit, Layout};
 use crate::loader::{FlowLoadController, FlowLoadStatus};
 use gpui::AsyncApp;
 use gpui::*;
-use gpui_component::alert::Alert;
 use gpui_component::button::Button;
-use gpui_component::group_box::GroupBox;
 use gpui_component::input::InputEvent;
 use gpui_component::progress::Progress;
 use gpui_component::resizable::ResizableState;
@@ -359,106 +357,93 @@ impl WirecrabApp {
         self.detail_pane.close(cx);
     }
 
-    fn render_centered_panel(
-        &self,
-        cx: &mut Context<Self>,
-        card: impl IntoElement,
-    ) -> Div {
-        div()
-            .size_full()
-            .bg(cx.theme().colors.background)
-            .text_color(cx.theme().colors.foreground)
-            .flex()
-            .items_center()
-            .justify_center()
-            .p_6()
-            .child(div().w_full().max_w(px(480.0)).child(card))
+    fn render_loader_status_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if let Some(progress) = self.loader.progress() {
+            let progress_percent = (progress * 100.0).clamp(0.0, 100.0);
+            let headline = format!("Loading {}", self.path);
+
+            let status = div()
+                .id("loader_status_progress")
+                .bg(cx.theme().colors.secondary)
+                .border_t_1()
+                .border_color(cx.theme().colors.border)
+                .px_3()
+                .py_2()
+                .flex()
+                .items_center()
+                .gap_4()
+                .justify_between()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(div().text_sm().font_bold().child(headline))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().colors.muted_foreground)
+                                .child("Parsing flows. Large captures can take a minute."),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .w(px(220.0))
+                        .child(div().h_3().child(Progress::new().value(progress_percent)))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().colors.muted_foreground)
+                                .flex()
+                                .justify_end()
+                                .child(format!("{progress_percent:.0}%")),
+                        ),
+                );
+
+            return Some(status.into_any_element());
+        }
+
+        if let Some(error) = self.loader.error() {
+            let message = format!("Wirecrab could not open {}.", self.path);
+
+            let status = div()
+                .id("loader_status_error")
+                .bg(cx.theme().colors.secondary)
+                .border_t_1()
+                .border_color(cx.theme().colors.border)
+                .px_3()
+                .py_2()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(Icon::new(IconName::TriangleAlert))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(div().text_sm().font_bold().child(message))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().colors.muted_foreground)
+                                .child(error.clone()),
+                        ),
+                );
+
+            return Some(status.into_any_element());
+        }
+
+        None
     }
 }
 
 impl Render for WirecrabApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if let Some(progress) = self.loader.progress() {
-            let progress_percent = (progress * 100.0).clamp(0.0, 100.0);
-
-            let progress_card = GroupBox::new()
-                .id("loader_progress_card")
-                .fill()
-                .title("Capture progress")
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_4()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .child(
-                                    div()
-                                        .text_lg()
-                                        .font_bold()
-                                        .child(format!("Loading {}", self.path)),
-                                )
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(cx.theme().colors.muted_foreground)
-                                        .child("Parsing flows. Large captures can take a minute."),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                .child(div().h_4().child(Progress::new().value(progress_percent)))
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(cx.theme().colors.muted_foreground)
-                                        .child(format!("{progress_percent:.0}% complete")),
-                                ),
-                        ),
-                );
-
-            return self.render_centered_panel(cx, progress_card);
-        }
-
-        if let Some(error) = self.loader.error() {
-            let alert_message = format!("Wirecrab could not open {}.\n{}", self.path, error);
-
-            let error_card = GroupBox::new()
-                .id("loader_error_card")
-                .outline()
-                .title("Capture error")
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_4()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .child(div().text_lg().font_bold().child("Something went wrong"))
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(cx.theme().colors.muted_foreground)
-                                        .child("We couldn't read the capture file."),
-                                ),
-                        )
-                        .child(
-                            Alert::error("loader_error_alert", alert_message)
-                                .title("Unable to load capture"),
-                        ),
-                );
-
-            return self.render_centered_panel(cx, error_card);
-        }
+        let loader_status = self.render_loader_status_bar(cx);
 
         let query = self.flow_view.query(cx);
         let flows_vec = self.flows.filtered_flows(&query);
@@ -544,6 +529,10 @@ impl Render for WirecrabApp {
             .right_range(px(240.0)..Pixels::MAX);
 
             layout = layout.bottom_closable_split(header_content, split, close_handler);
+        }
+
+        if let Some(status) = loader_status {
+            layout = layout.status_bar(status);
         }
 
         div().size_full().child(layout)

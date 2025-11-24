@@ -17,6 +17,7 @@ pub struct Layout {
     main: AnyElement,
     bottom: Option<ClosableBottomPane>,
     resizable_state: Entity<ResizableState>,
+    footer: Option<AnyElement>,
 }
 
 struct ClosableBottomPane {
@@ -78,6 +79,7 @@ impl Layout {
             main: div().into_any_element(),
             bottom: None,
             resizable_state,
+            footer: None,
         }
     }
 
@@ -103,6 +105,11 @@ impl Layout {
             content: split,
             on_close: Box::new(on_close),
         });
+        self
+    }
+
+    pub fn status_bar(mut self, footer: impl IntoElement) -> Self {
+        self.footer = Some(footer.into_any_element());
         self
     }
 }
@@ -169,7 +176,14 @@ impl RenderOnce for Layout {
             header_content.into_any_element()
         };
 
-        div().size_full().child(content)
+        let mut root = div().size_full().flex().flex_col();
+        root = root.child(div().flex_1().child(content));
+
+        if let Some(footer) = self.footer {
+            root = root.child(footer);
+        }
+
+        root
     }
 }
 
