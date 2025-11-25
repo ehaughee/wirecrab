@@ -6,6 +6,7 @@ Wirecrab is a packet-capture inspector with both graphical (GPUI) and terminal (
 
 - Rust 1.81+ (stable toolchain recommended)
 - PCAP/PCAPNG capture files to inspect (sample data lives in `testdata/`)
+- No extra fonts required—the JetBrains Mono typeface ships with Wirecrab.
 
 Clone the repository and change into the workspace before running any commands:
 

@@ -2,6 +2,7 @@ use crate::flow::filter::FlowFilter;
 use crate::flow::*;
 use crate::gui::assets::Assets;
 use crate::gui::components::{FlowTable, PacketBytesView, PacketTable, SearchBar, Toolbar};
+use crate::gui::fonts;
 use crate::gui::layout::{BottomSplit, Layout};
 use crate::loader::{FlowLoadController, FlowLoadStatus};
 use gpui::AsyncApp;
@@ -570,6 +571,12 @@ pub fn run_ui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     app.run(move |cx: &mut App| {
         gpui_component::init(cx);
         crate::gui::theme::init(cx);
+        let text_system = cx.text_system();
+        if let Err(error) = fonts::register_with(text_system.as_ref()) {
+            warn!(?error, "Failed to register bundled JetBrains Mono font");
+        } else {
+            info!("Bundled JetBrains Mono font registered");
+        }
         let win_opts = WindowOptions {
             titlebar: Some(TitlebarOptions {
                 title: Some(String::from("Wirecrab").into()),

@@ -1,8 +1,8 @@
+use crate::gui::fonts::JETBRAINS_MONO_FAMILY;
 use gpui::*;
 use gpui_component::{ActiveTheme, StyledExt as _, scroll::Scrollable};
 
 const BYTES_PER_ROW: usize = 16;
-const MONO_FAMILY: &str = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 /// Displays packet bytes in a Wireshark-style hex + ASCII grid.
 #[derive(IntoElement, Clone)]
@@ -32,7 +32,7 @@ impl PacketBytesView {
             .px_3()
             .py_2()
             .text_sm()
-            .font_family(MONO_FAMILY)
+            .font_family(JETBRAINS_MONO_FAMILY)
             .text_color(cx.theme().colors.foreground);
 
         for (row, chunk) in bytes.chunks(BYTES_PER_ROW).enumerate() {
