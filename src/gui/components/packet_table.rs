@@ -1,4 +1,4 @@
-use crate::flow::{Flow, Packet};
+use crate::flow::{Flow, FlowKey, Packet};
 use gpui::*;
 use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
 use gpui_component::{ActiveTheme, StyledExt};
@@ -7,7 +7,9 @@ use std::ops::Range;
 #[derive(IntoElement, Clone)]
 pub struct PacketTable {
     state: Entity<TableState<PacketTableDelegate>>,
-    flow: Flow,
+    flow_key: Option<FlowKey>,
+    packet_count: usize,
+    last_start_timestamp: Option<f64>,
 }
 
 impl PacketTable {
@@ -19,21 +21,36 @@ impl PacketTable {
     ) -> Self {
         let state =
             PacketTableDelegate::create_entity(window, cx, Some(flow.clone()), start_timestamp);
+        let flow_key = FlowKey::from_endpoints(flow.source, flow.destination, flow.protocol);
         Self {
             state,
-            flow: flow.clone(),
+            flow_key: Some(flow_key),
+            packet_count: flow.packets.len(),
+            last_start_timestamp: start_timestamp,
         }
     }
 
     pub fn update(&mut self, flow: &Flow, start_timestamp: Option<f64>, cx: &mut App) {
-        self.flow = flow.clone();
+        let flow_key = FlowKey::from_endpoints(flow.source, flow.destination, flow.protocol);
+        let packet_count = flow.packets.len();
+        let needs_refresh = self.flow_key != Some(flow_key)
+            || self.packet_count != packet_count
+            || self.last_start_timestamp != start_timestamp;
+
+        if !needs_refresh {
+            return;
+        }
+
         self.state.update(cx, move |table, cx| {
             let delegate = table.delegate_mut();
             delegate.set_flow(Some(&flow));
             delegate.set_start_timestamp(start_timestamp);
             table.refresh(cx);
-            cx.notify();
         });
+
+        self.flow_key = Some(flow_key);
+        self.packet_count = packet_count;
+        self.last_start_timestamp = start_timestamp;
     }
 
     pub fn entity(&self) -> &Entity<TableState<PacketTableDelegate>> {

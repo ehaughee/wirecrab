@@ -15,7 +15,7 @@ use gpui_component::table::TableEvent;
 use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Root, StyledExt};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 struct FlowStore {
     flows: HashMap<FlowKey, Flow>,
@@ -128,6 +128,9 @@ impl LoaderState {
 struct FlowView {
     search_bar: SearchBar,
     table: FlowTable,
+    last_flow_keys: Vec<FlowKey>,
+    last_selected: Option<FlowKey>,
+    last_start_timestamp: Option<f64>,
 }
 
 impl FlowView {
@@ -150,6 +153,8 @@ impl FlowView {
             table.entity(),
             window,
             |app, table_state, event, _window, cx| {
+                let event_desc = FlowView::describe_table_event(event);
+                trace!(event = %event_desc, "Flow table event");
                 if let TableEvent::SelectRow(row_ix) = event {
                     let state = table_state.read(cx);
                     if let Some((key, _)) = state.delegate().flows.get(*row_ix) {
@@ -164,7 +169,13 @@ impl FlowView {
         )
         .detach();
 
-        Self { search_bar, table }
+        Self {
+            search_bar,
+            table,
+            last_flow_keys: Vec::new(),
+            last_selected: None,
+            last_start_timestamp: None,
+        }
     }
 
     fn query(&self, cx: &App) -> String {
@@ -180,20 +191,47 @@ impl FlowView {
     }
 
     fn update_table(
-        &self,
+        &mut self,
         flows: Vec<(FlowKey, Flow)>,
         selected: Option<FlowKey>,
         start_timestamp: Option<f64>,
         cx: &mut App,
     ) {
+        let new_keys: Vec<FlowKey> = flows.iter().map(|(key, _)| *key).collect();
+        if self.last_flow_keys == new_keys
+            && self.last_selected == selected
+            && self.last_start_timestamp == start_timestamp
+        {
+            trace!("Flow table unchanged; skipping refresh");
+            return;
+        }
+        trace!(
+            rows = flows.len(),
+            selected = ?selected,
+            "Refreshing flow table"
+        );
         self.table.update(cx, move |table, cx| {
             let delegate = table.delegate_mut();
             delegate.set_start_timestamp(start_timestamp);
             delegate.set_flows(flows);
             delegate.selected_flow = selected;
             table.refresh(cx);
-            cx.notify();
         });
+        self.last_flow_keys = new_keys;
+        self.last_selected = selected;
+        self.last_start_timestamp = start_timestamp;
+    }
+
+    fn describe_table_event(event: &TableEvent) -> String {
+        match event {
+            TableEvent::SelectRow(row) => format!("SelectRow({row})"),
+            TableEvent::DoubleClickedRow(row) => format!("DoubleClickedRow({row})"),
+            TableEvent::SelectColumn(col) => format!("SelectColumn({col})"),
+            TableEvent::ColumnWidthsChanged(widths) => {
+                format!("ColumnWidthsChanged(len={})", widths.len())
+            }
+            TableEvent::MoveColumn(from, to) => format!("MoveColumn({from}->{to})"),
+        }
     }
 }
 
@@ -201,6 +239,9 @@ struct DetailPane {
     packet_table: Option<PacketTable>,
     split_state: Entity<ResizableState>,
     selected_packet: Option<Packet>,
+    last_flow_key: Option<FlowKey>,
+    last_packet_count: usize,
+    last_start_timestamp: Option<f64>,
 }
 
 impl DetailPane {
@@ -209,6 +250,9 @@ impl DetailPane {
             packet_table: None,
             split_state: cx.new(|_| ResizableState::default()),
             selected_packet: None,
+            last_flow_key: None,
+            last_packet_count: 0,
+            last_start_timestamp: None,
         }
     }
 
@@ -219,15 +263,35 @@ impl DetailPane {
         flow: &Flow,
         start_timestamp: Option<f64>,
     ) {
+        let flow_key = FlowKey::from_endpoints(flow.source, flow.destination, flow.protocol);
+        let packet_count = flow.packets.len();
+        let needs_update = self.packet_table.is_none()
+            || self.last_flow_key != Some(flow_key)
+            || self.last_packet_count != packet_count
+            || self.last_start_timestamp != start_timestamp;
+
         if let Some(table) = &mut self.packet_table {
-            table.update(flow, start_timestamp, cx);
+            if needs_update {
+                trace!(packet_count, "Updating packet table in detail pane");
+                table.update(flow, start_timestamp, cx);
+            } else {
+                trace!("Packet table unchanged; skipping refresh");
+            }
         } else {
+            trace!(
+                packet_count = flow.packets.len(),
+                "Creating packet table for detail pane"
+            );
             let packet_table = PacketTable::create(window, cx, flow, start_timestamp);
             Self::subscribe_to_selection(&packet_table, window, cx);
             self.packet_table = Some(packet_table);
             self.split_state = cx.new(|_| ResizableState::default());
             self.selected_packet = None;
         }
+
+        self.last_flow_key = Some(flow_key);
+        self.last_packet_count = packet_count;
+        self.last_start_timestamp = start_timestamp;
     }
 
     fn subscribe_to_selection(
@@ -281,7 +345,10 @@ impl DetailPane {
         self.packet_table = None;
         self.selected_packet = None;
         self.split_state = cx.new(|_| ResizableState::default());
-        debug!("Detail pane closed");
+        trace!("Detail pane closed");
+        self.last_flow_key = None;
+        self.last_packet_count = 0;
+        self.last_start_timestamp = None;
     }
 }
 
