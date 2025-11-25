@@ -1,7 +1,10 @@
 use crate::flow::filter::FlowFilter;
 use crate::flow::*;
 use crate::gui::assets::Assets;
-use crate::gui::components::{FlowTable, PacketBytesView, PacketTable, SearchBar, Toolbar};
+use crate::gui::components::{
+    histogram_from_flows, render_histogram, FlowTable, PacketBytesView, PacketTable,
+    ProtocolCategory, SearchBar, Toolbar,
+};
 use crate::gui::fonts;
 use crate::gui::layout::{BottomSplit, Layout};
 use crate::loader::{FlowLoadController, FlowLoadStatus};
@@ -359,6 +362,7 @@ pub struct WirecrabApp {
     flow_view: FlowView,
     detail_pane: DetailPane,
     main_split_state: Entity<ResizableState>,
+    histogram_collapsed: bool,
 }
 
 impl WirecrabApp {
@@ -397,6 +401,7 @@ impl WirecrabApp {
             flow_view,
             detail_pane,
             main_split_state,
+            histogram_collapsed: false,
         }
     }
 
@@ -542,6 +547,9 @@ impl Render for WirecrabApp {
         let selected_flow = self.flows.selected_flow();
         let start_timestamp = self.flows.start_timestamp();
 
+        // Compute histogram before updating table (which consumes flows_vec)
+        let histogram_buckets = histogram_from_flows(&flows_vec, start_timestamp);
+
         self.flow_view
             .update_table(flows_vec, selected_flow, start_timestamp, cx);
 
@@ -595,9 +603,39 @@ impl Render for WirecrabApp {
                 .right(clear_button)
         };
 
+        // Histogram
+        let histogram_collapsed = self.histogram_collapsed;
+        let on_toggle =
+            cx.listener(|app: &mut WirecrabApp, _event: &ClickEvent, _window, cx| {
+                app.histogram_collapsed = !app.histogram_collapsed;
+                cx.notify();
+            });
+        let on_legend_click = {
+            let flow_view_search_bar = self.flow_view.search_bar.entity().clone();
+            move |category: ProtocolCategory, window: &mut Window, cx: &mut App| {
+                flow_view_search_bar.update(cx, |state, cx| {
+                    state.set_value(category.filter_value(), window, cx);
+                });
+            }
+        };
+        let histogram = render_histogram(
+            histogram_buckets,
+            histogram_collapsed,
+            on_toggle,
+            on_legend_click,
+            cx,
+        );
+
+        let main_content = div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .child(histogram)
+            .child(div().flex_1().overflow_hidden().child(self.flow_view.table()));
+
         let mut layout = Layout::new(self.main_split_state.clone())
             .header(toolbar)
-            .main(self.flow_view.table());
+            .main(main_content);
 
         if let (Some(flow), Some(packet_table)) =
             (current_flow.as_ref(), self.detail_pane.packet_table())
