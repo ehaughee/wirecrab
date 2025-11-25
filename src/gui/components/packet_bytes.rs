@@ -90,29 +90,33 @@ impl RenderOnce for PacketBytesView {
 
         match self.bytes.as_deref() {
             Some(bytes) if !bytes.is_empty() => base
+                // Byte count header
                 .child(
                     div()
-                        .flex()
-                        .items_center()
-                        .px_4()
+                        .px_3()
                         .py_2()
                         .border_b_1()
                         .border_color(cx.theme().colors.border)
                         .text_sm()
                         .text_color(cx.theme().colors.muted_foreground)
-                        .child(format!("{} bytes", bytes.len()))
-                        .child(
-                            div()
-                                .flex()
-                                .gap_x_4()
-                                .items_start()
-                                .px_3()
-                                .text_xs()
-                                .text_color(cx.theme().colors.muted_foreground)
-                                .child(div().w(px(64.0)).child("Offset"))
-                                .child(div().flex_grow().child("Hexadecimal"))
-                                .child(div().w(px(140.0)).child("ASCII")),
-                        ),
+                        .child(format!("{} bytes", bytes.len())),
+                )
+                // Column headers - same layout as data rows
+                .child(
+                    div()
+                        .flex()
+                        .gap_x_4()
+                        .items_start()
+                        .px_3()
+                        .py_1()
+                        .text_xs()
+                        .font_family(JETBRAINS_MONO_FAMILY)
+                        .text_color(cx.theme().colors.muted_foreground)
+                        .border_b_1()
+                        .border_color(cx.theme().colors.border)
+                        .child(div().w(px(64.0)).child("Offset"))
+                        .child(div().flex_grow().child("Hexadecimal"))
+                        .child(div().w(px(140.0)).child("ASCII")),
                 )
                 .child(self.render_lines(bytes, cx)),
             _ => base.child(
