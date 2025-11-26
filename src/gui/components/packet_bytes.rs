@@ -1,8 +1,13 @@
 use crate::gui::fonts::JETBRAINS_MONO_FAMILY;
 use gpui::*;
-use gpui_component::{ActiveTheme, StyledExt as _, scroll::Scrollable};
+use gpui_component::{ActiveTheme, StyledExt};
 
 const BYTES_PER_ROW: usize = 16;
+
+// Fixed column widths for consistent alignment
+const OFFSET_WIDTH: f32 = 72.0;
+const HEX_WIDTH: f32 = 450.0;
+const ASCII_WIDTH: f32 = 140.0;
 
 /// Displays packet bytes in a Wireshark-style hex + ASCII grid.
 #[derive(IntoElement, Clone)]
@@ -24,57 +29,74 @@ impl PacketBytesView {
         }
     }
 
-    fn render_lines(&self, bytes: &[u8], cx: &mut App) -> Scrollable<Div> {
-        let mut lines = div()
+    fn render_header(cx: &mut App) -> Div {
+        div()
             .flex()
-            .flex_col()
-            .gap_y_1()
+            .flex_row()
+            .flex_shrink_0()
             .px_3()
-            .py_2()
-            .text_sm()
-            .font_family(JETBRAINS_MONO_FAMILY)
-            .text_color(cx.theme().colors.foreground);
+            .py_1()
+            .gap_2()
+            .border_b_1()
+            .border_color(cx.theme().colors.border)
+            .text_xs()
+            .text_color(cx.theme().colors.muted_foreground)
+            .child(div().w(px(OFFSET_WIDTH)).child("Offset"))
+            .child(div().w(px(HEX_WIDTH)).child("Hexadecimal"))
+            .child(div().w(px(ASCII_WIDTH)).child("ASCII"))
+    }
 
-        for (row, chunk) in bytes.chunks(BYTES_PER_ROW).enumerate() {
-            let offset = row * BYTES_PER_ROW;
-
-            let mut hex_part = String::new();
-            for idx in 0..BYTES_PER_ROW {
-                if idx == BYTES_PER_ROW / 2 {
-                    hex_part.push(' ');
-                }
-
-                if let Some(byte) = chunk.get(idx) {
-                    hex_part.push_str(&format!("{:02X} ", byte));
-                } else {
-                    hex_part.push_str("   ");
-                }
+    fn render_row(offset: usize, chunk: &[u8]) -> Div {
+        let mut hex_part = String::new();
+        for idx in 0..BYTES_PER_ROW {
+            if idx == BYTES_PER_ROW / 2 {
+                hex_part.push(' ');
             }
-
-            let ascii_part: String = chunk.iter().map(|b| Self::printable_ascii(*b)).collect();
-
-            lines = lines.child(
-                div()
-                    .flex()
-                    .gap_x_4()
-                    .items_start()
-                    .child(
-                        div()
-                            .w(px(64.0))
-                            .text_color(cx.theme().colors.muted_foreground)
-                            .child(format!("{offset:06X}")),
-                    )
-                    .child(div().flex_grow().child(hex_part))
-                    .child(
-                        div()
-                            .w(px(140.0))
-                            .text_color(cx.theme().colors.muted_foreground)
-                            .child(ascii_part),
-                    ),
-            );
+            if let Some(byte) = chunk.get(idx) {
+                hex_part.push_str(&format!("{:02X} ", byte));
+            } else {
+                hex_part.push_str("   ");
+            }
         }
 
-        lines.scrollable(Axis::Vertical)
+        let ascii_part: String = chunk.iter().map(|b| Self::printable_ascii(*b)).collect();
+
+        div()
+            .flex()
+            .flex_row()
+            .px_3()
+            .py_px()
+            .gap_2()
+            .child(div().w(px(OFFSET_WIDTH)).child(format!("{offset:06X}")))
+            .child(div().w(px(HEX_WIDTH)).child(hex_part))
+            .child(div().w(px(ASCII_WIDTH)).child(ascii_part))
+    }
+
+    fn render_lines(&self, bytes: &[u8], cx: &mut App) -> Div {
+        let rows: Vec<Div> = bytes
+            .chunks(BYTES_PER_ROW)
+            .enumerate()
+            .map(|(row, chunk)| Self::render_row(row * BYTES_PER_ROW, chunk))
+            .collect();
+
+        div()
+            .flex()
+            .flex_col()
+            .min_h_0()
+            .flex_1()
+            .overflow_hidden()
+            .child(Self::render_header(cx))
+            .child(
+                div()
+                    .py_1()
+                    .font_family(JETBRAINS_MONO_FAMILY)
+                    .text_sm()
+                    .min_h_0()
+                    .flex_1()
+                    .overflow_hidden()
+                    .children(rows)
+                    .scrollable(Axis::Vertical),
+            )
     }
 }
 
@@ -84,41 +106,14 @@ impl RenderOnce for PacketBytesView {
             .flex()
             .flex_col()
             .size_full()
+            .min_h_0()
+            .overflow_hidden()
             .bg(cx.theme().colors.background)
             .border_l_1()
             .border_color(cx.theme().colors.border);
 
         match self.bytes.as_deref() {
-            Some(bytes) if !bytes.is_empty() => base
-                // Byte count header
-                .child(
-                    div()
-                        .px_3()
-                        .py_2()
-                        .border_b_1()
-                        .border_color(cx.theme().colors.border)
-                        .text_sm()
-                        .text_color(cx.theme().colors.muted_foreground)
-                        .child(format!("{} bytes", bytes.len())),
-                )
-                // Column headers - same layout as data rows
-                .child(
-                    div()
-                        .flex()
-                        .gap_x_4()
-                        .items_start()
-                        .px_3()
-                        .py_1()
-                        .text_xs()
-                        .font_family(JETBRAINS_MONO_FAMILY)
-                        .text_color(cx.theme().colors.muted_foreground)
-                        .border_b_1()
-                        .border_color(cx.theme().colors.border)
-                        .child(div().w(px(64.0)).child("Offset"))
-                        .child(div().flex_grow().child("Hexadecimal"))
-                        .child(div().w(px(140.0)).child("ASCII")),
-                )
-                .child(self.render_lines(bytes, cx)),
+            Some(bytes) if !bytes.is_empty() => base.child(self.render_lines(bytes, cx)),
             _ => base.child(
                 div()
                     .flex()
