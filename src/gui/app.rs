@@ -2,8 +2,8 @@ use crate::flow::filter::FlowFilter;
 use crate::flow::*;
 use crate::gui::assets::Assets;
 use crate::gui::components::{
-    histogram_from_flows, render_histogram, FlowTable, PacketBytesView, PacketTable,
-    ProtocolCategory, SearchBar, Toolbar,
+    FlowTable, PacketBytesView, PacketTable, ProtocolCategory, SearchBar, Toolbar,
+    histogram_from_flows, render_histogram,
 };
 use crate::gui::fonts;
 use crate::gui::layout::{BottomSplit, Layout};
@@ -605,11 +605,10 @@ impl Render for WirecrabApp {
 
         // Histogram
         let histogram_collapsed = self.histogram_collapsed;
-        let on_toggle =
-            cx.listener(|app: &mut WirecrabApp, _event: &ClickEvent, _window, cx| {
-                app.histogram_collapsed = !app.histogram_collapsed;
-                cx.notify();
-            });
+        let on_toggle = cx.listener(|app: &mut WirecrabApp, _event: &ClickEvent, _window, cx| {
+            app.histogram_collapsed = !app.histogram_collapsed;
+            cx.notify();
+        });
         let on_legend_click = {
             let flow_view_search_bar = self.flow_view.search_bar.entity().clone();
             move |category: ProtocolCategory, window: &mut Window, cx: &mut App| {
@@ -626,12 +625,12 @@ impl Render for WirecrabApp {
             cx,
         );
 
-        let main_content = div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .child(histogram)
-            .child(div().flex_1().overflow_hidden().child(self.flow_view.table()));
+        let main_content = div().flex().flex_col().size_full().child(histogram).child(
+            div()
+                .flex_1()
+                .overflow_hidden()
+                .child(self.flow_view.table()),
+        );
 
         let mut layout = Layout::new(self.main_split_state.clone())
             .header(toolbar)
