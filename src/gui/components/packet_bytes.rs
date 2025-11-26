@@ -1,6 +1,6 @@
 use crate::gui::fonts::JETBRAINS_MONO_FAMILY;
 use gpui::*;
-use gpui_component::{ActiveTheme, StyledExt};
+use gpui_component::ActiveTheme;
 
 const BYTES_PER_ROW: usize = 16;
 
@@ -10,16 +10,25 @@ const HEX_WIDTH: f32 = 450.0;
 const ASCII_WIDTH: f32 = 140.0;
 
 /// Displays packet bytes in a Wireshark-style hex + ASCII grid.
-#[derive(IntoElement, Clone)]
+#[derive(IntoElement)]
 pub struct PacketBytesView {
+    list_state: Option<ListState>,
     bytes: Option<Vec<u8>>,
 }
 
 impl PacketBytesView {
-    pub fn new(bytes: Option<&[u8]>) -> Self {
-        Self {
-            bytes: bytes.map(|slice| slice.to_vec()),
-        }
+    pub fn new(list_state: Option<ListState>, bytes: Option<Vec<u8>>) -> Self {
+        Self { list_state, bytes }
+    }
+
+    pub fn create_list_state(bytes: &[u8]) -> ListState {
+        let row_count = (bytes.len() + BYTES_PER_ROW - 1) / BYTES_PER_ROW;
+        tracing::info!("Creating list state with {} rows for {} bytes", row_count, bytes.len());
+        ListState::new(
+            row_count,
+            ListAlignment::Top,
+            px(20.0),
+        )
     }
 
     fn printable_ascii(byte: u8) -> char {
@@ -64,6 +73,7 @@ impl PacketBytesView {
         div()
             .flex()
             .flex_row()
+            .w_full() // Ensure row takes full width
             .px_3()
             .py_px()
             .gap_2()
@@ -71,49 +81,44 @@ impl PacketBytesView {
             .child(div().w(px(HEX_WIDTH)).child(hex_part))
             .child(div().w(px(ASCII_WIDTH)).child(ascii_part))
     }
-
-    fn render_lines(&self, bytes: &[u8], cx: &mut App) -> Div {
-        let rows: Vec<Div> = bytes
-            .chunks(BYTES_PER_ROW)
-            .enumerate()
-            .map(|(row, chunk)| Self::render_row(row * BYTES_PER_ROW, chunk))
-            .collect();
-
-        div()
-            .flex()
-            .flex_col()
-            .min_h_0()
-            .flex_1()
-            .overflow_hidden()
-            .child(Self::render_header(cx))
-            .child(
-                div()
-                    .py_1()
-                    .font_family(JETBRAINS_MONO_FAMILY)
-                    .text_sm()
-                    .min_h_0()
-                    .flex_1()
-                    .overflow_hidden()
-                    .children(rows)
-                    .scrollable(Axis::Vertical),
-            )
-    }
 }
 
 impl RenderOnce for PacketBytesView {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        tracing::info!("Rendering PacketBytesView. Has state: {}, Has bytes: {}", self.list_state.is_some(), self.bytes.is_some());
         let base = div()
             .flex()
             .flex_col()
             .size_full()
-            .min_h_0()
-            .overflow_hidden()
             .bg(cx.theme().colors.background)
-            .border_l_1()
+            .border_1()
             .border_color(cx.theme().colors.border);
 
-        match self.bytes.as_deref() {
-            Some(bytes) if !bytes.is_empty() => base.child(self.render_lines(bytes, cx)),
+        match (self.list_state, self.bytes) {
+            (Some(list_state), Some(bytes)) => {
+                base
+                    .child(Self::render_header(cx))
+                    .child(
+                    div()
+                        .font_family(JETBRAINS_MONO_FAMILY)
+                        .text_sm()
+                        .text_color(cx.theme().colors.foreground)
+                        .flex_1()
+                        .size_full()
+                        .child(
+                            list(list_state, move |ix, _window, _cx| {
+                                let start = ix * BYTES_PER_ROW;
+                                let end = (start + BYTES_PER_ROW).min(bytes.len());
+                                let chunk = &bytes[start..end];
+                                tracing::info!("Rendering row {}", ix);
+                                Self::render_row(start, chunk)
+                                    .h(px(20.0))
+                                    .into_any_element()
+                            })
+                            .size_full() // Ensure list takes full size of container
+                        ),
+                )
+            }
             _ => base.child(
                 div()
                     .flex()
