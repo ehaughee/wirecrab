@@ -1,6 +1,7 @@
 use crate::flow::{Flow, FlowKey, Packet};
 use gpui::*;
 use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
+use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, StyledExt};
 use std::ops::Range;
 
@@ -226,14 +227,7 @@ impl TableDelegate for PacketTableDelegate {
                 .flex()
                 .gap_1()
                 .children(packet.tags.iter().map(|tag| {
-                    let color = get_tag_color(tag);
-                    div()
-                        .px_1()
-                        .rounded_sm()
-                        .bg(color)
-                        .text_color(white())
-                        .text_xs()
-                        .child(tag.clone())
+                    Tag::new().child(tag.clone())
                 }))
                 .into_any_element();
         }
@@ -301,16 +295,4 @@ fn make_packet_col(
         .sortable()
         .movable(false)
         .resizable(true)
-}
-
-fn get_tag_color(tag: &str) -> Hsla {
-    let mut hash: u32 = 0;
-    for byte in tag.bytes() {
-        hash = hash.wrapping_add(byte as u32);
-        hash = hash.wrapping_mul(1664525).wrapping_add(1013904223);
-    }
-    
-    let hue = (hash % 360) as f32 / 360.0;
-    // Use a slightly darker color for better contrast with white text
-    hsla(hue, 0.7, 0.4, 1.0)
 }
