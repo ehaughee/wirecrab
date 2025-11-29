@@ -2,14 +2,9 @@ use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 use tracing::{info, warn};
-
-mod flow;
-mod gui;
-mod layers;
-mod loader;
-mod logging;
-mod parser;
-mod tui;
+#[cfg(feature = "ui")]
+use wirecrab::gui;
+use wirecrab::{logging, tui};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

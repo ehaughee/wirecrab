@@ -1,3 +1,6 @@
 /target
 testdata/win_pcap.pcapng
 wirecrab.log
+.idea/
+.jj/
+.vscode/

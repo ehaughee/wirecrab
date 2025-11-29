@@ -23,12 +23,12 @@ impl PacketBytesView {
 
     pub fn create_list_state(bytes: &[u8]) -> ListState {
         let row_count = (bytes.len() + BYTES_PER_ROW - 1) / BYTES_PER_ROW;
-        tracing::info!("Creating list state with {} rows for {} bytes", row_count, bytes.len());
-        ListState::new(
+        tracing::info!(
+            "Creating list state with {} rows for {} bytes",
             row_count,
-            ListAlignment::Top,
-            px(20.0),
-        )
+            bytes.len()
+        );
+        ListState::new(row_count, ListAlignment::Top, px(20.0))
     }
 
     fn printable_ascii(byte: u8) -> char {
@@ -85,7 +85,11 @@ impl PacketBytesView {
 
 impl RenderOnce for PacketBytesView {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        tracing::info!("Rendering PacketBytesView. Has state: {}, Has bytes: {}", self.list_state.is_some(), self.bytes.is_some());
+        tracing::info!(
+            "Rendering PacketBytesView. Has state: {}, Has bytes: {}",
+            self.list_state.is_some(),
+            self.bytes.is_some()
+        );
         let base = div()
             .flex()
             .flex_col()
@@ -96,9 +100,7 @@ impl RenderOnce for PacketBytesView {
 
         match (self.list_state, self.bytes) {
             (Some(list_state), Some(bytes)) => {
-                base
-                    .child(Self::render_header(cx))
-                    .child(
+                base.child(Self::render_header(cx)).child(
                     div()
                         .font_family(JETBRAINS_MONO_FAMILY)
                         .text_sm()
@@ -115,7 +117,7 @@ impl RenderOnce for PacketBytesView {
                                     .h(px(20.0))
                                     .into_any_element()
                             })
-                            .size_full() // Ensure list takes full size of container
+                            .size_full(), // Ensure list takes full size of container
                         ),
                 )
             }

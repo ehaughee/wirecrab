@@ -242,6 +242,7 @@ struct DetailPane {
     packet_table: Option<PacketTable>,
     split_state: Entity<ResizableState>,
     selected_packet: Option<Packet>,
+    packet_bytes_list_state: Option<ListState>,
     last_flow_key: Option<FlowKey>,
     last_packet_count: usize,
     last_start_timestamp: Option<f64>,
@@ -253,6 +254,7 @@ impl DetailPane {
             packet_table: None,
             split_state: cx.new(|_| ResizableState::default()),
             selected_packet: None,
+            packet_bytes_list_state: None,
             last_flow_key: None,
             last_packet_count: 0,
             last_start_timestamp: None,
@@ -338,6 +340,11 @@ impl DetailPane {
 
     fn set_selected_packet(&mut self, packet: Option<Packet>) {
         self.selected_packet = packet;
+        if let Some(packet) = &self.selected_packet {
+            self.packet_bytes_list_state = Some(PacketBytesView::create_list_state(&packet.data));
+        } else {
+            self.packet_bytes_list_state = None;
+        }
     }
 
     fn has_content(&self) -> bool {
@@ -347,6 +354,7 @@ impl DetailPane {
     fn close(&mut self, cx: &mut Context<WirecrabApp>) {
         self.packet_table = None;
         self.selected_packet = None;
+        self.packet_bytes_list_state = None;
         self.split_state = cx.new(|_| ResizableState::default());
         trace!("Detail pane closed");
         self.last_flow_key = None;
@@ -645,7 +653,10 @@ impl Render for WirecrabApp {
                 cx.notify();
             });
 
-            let bytes_view = PacketBytesView::new(self.detail_pane.selected_packet_bytes());
+            let bytes_view = PacketBytesView::new(
+                self.detail_pane.packet_bytes_list_state.clone(),
+                self.detail_pane.selected_packet_bytes().map(|b| b.to_vec()),
+            );
 
             let split = BottomSplit::new(
                 "packet_detail_split",

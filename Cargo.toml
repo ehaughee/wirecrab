@@ -1,3 +1,6 @@
+[workspace]
+members = ["story"]
+
 [package]
 name = "wirecrab"
 version = "0.1.0"
@@ -22,3 +25,19 @@ tracing-appender = "0.2"
 data = ["pcap-parser/data"]
 ui = ["dep:gpui", "dep:gpui-component", "dep:gpui-component-assets"]
 tui = ["dep:ratatui", "dep:crossterm", "dep:tui-tree-widget"]
+
+
+[lib]
+crate-type = ["rlib"]
+
+[profile.dev]
+debug = 0
+incremental = false
+codegen-units = 1
+strip = true
+
+[profile.dev.package."*"]
+debug = 0
+incremental = false
+codegen-units = 1
+strip = true
