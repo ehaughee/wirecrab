@@ -1,7 +1,7 @@
 use crate::flow::*;
 use gpui::*;
-use gpui_component::ActiveTheme;
 use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
+use gpui_component::{ActiveTheme, Sizable, table};
 use std::ops::Range;
 
 #[derive(IntoElement, Clone)]
@@ -39,13 +39,15 @@ impl FlowTable {
 
 impl RenderOnce for FlowTable {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let table = Table::new(&self.state).bordered(false).xsmall();
+
         div()
             .size_full()
             .overflow_hidden()
             .rounded_none()
             .border_1()
             .border_color(cx.theme().colors.border)
-            .child(Table::new(&self.state).bordered(false))
+            .child(table)
     }
 }
 

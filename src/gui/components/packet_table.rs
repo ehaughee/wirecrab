@@ -2,7 +2,7 @@ use crate::flow::{Flow, FlowKey, Packet};
 use gpui::*;
 use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
 use gpui_component::tag::Tag;
-use gpui_component::{ActiveTheme, StyledExt};
+use gpui_component::{ActiveTheme, ColorName, Sizable, StyledExt, h_flex};
 use std::ops::Range;
 
 #[derive(IntoElement, Clone)]
@@ -84,7 +84,7 @@ impl PacketTable {
 
 impl RenderOnce for PacketTable {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let table = Table::new(&self.state).bordered(false);
+        let table = Table::new(&self.state).bordered(false).xsmall();
 
         div()
             .flex()
@@ -217,17 +217,22 @@ impl TableDelegate for PacketTableDelegate {
         row_ix: usize,
         col_ix: usize,
         _window: &mut Window,
-        _cx: &mut App,
+        cx: &mut App,
     ) -> impl IntoElement {
         let packet = &self.packets[row_ix];
         let col = &self.columns[col_ix];
 
         if col.key == "details" {
-            return div()
-                .flex()
+            return h_flex()
                 .gap_1()
                 .children(packet.tags.iter().map(|tag| {
-                    Tag::new().child(tag.clone()).bg(get_tag_color(tag)).text_color(white())
+                    Tag::color(get_tag_color(tag))
+                        .with_size(px(12.0))
+                        .px(px(1.0))
+                        .py(px(1.0))
+                        .text_size(px(12.0))
+                        .text_color(cx.theme().colors.foreground)
+                        .child(tag.clone())
                 }))
                 .into_any_element();
         }
@@ -297,14 +302,15 @@ fn make_packet_col(
         .resizable(true)
 }
 
-fn get_tag_color(tag: &str) -> Hsla {
-    let mut hash: u32 = 0;
-    for byte in tag.bytes() {
-        hash = hash.wrapping_add(byte as u32);
-        hash = hash.wrapping_mul(1664525).wrapping_add(1013904223);
+fn get_tag_color(tag: &str) -> ColorName {
+    match tag {
+        "ACK" => ColorName::Green,
+        "SYN" => ColorName::Orange,
+        "SYN-ACK" => ColorName::Blue,
+        "FIN" => ColorName::Red,
+        "RST" => ColorName::Pink,
+        _ if tag.contains("TLS") => ColorName::Cyan,
+        _ if tag.contains("Hello") => ColorName::Purple,
+        _ => ColorName::Gray,
     }
-    
-    let hue = (hash % 360) as f32 / 360.0;
-    // Use a slightly darker color for better contrast with white text
-    hsla(hue, 0.7, 0.4, 1.0)
 }

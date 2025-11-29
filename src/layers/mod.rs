@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 pub mod ethernet;
 pub mod ip;
-pub mod transport;
 pub mod tls;
+pub mod transport;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LayerType {
