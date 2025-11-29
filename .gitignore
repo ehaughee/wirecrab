@@ -4,3 +4,4 @@ wirecrab.log
 .idea/
 .jj/
 .vscode/
+.cargo/*
