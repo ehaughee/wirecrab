@@ -46,6 +46,7 @@ pub struct Packet {
     pub dst_port: Option<u16>,
     pub length: u16,
     pub data: Vec<u8>,
+    pub tags: Vec<String>,
 }
 
 impl Default for Flow {

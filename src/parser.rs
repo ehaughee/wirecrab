@@ -135,6 +135,7 @@ where
                                         dst_port: Some(dst_port),
                                         length: packet_length,
                                         data: epb_packet_data.to_vec(),
+                                        tags: context.tags,
                                     };
 
                                     let flow = flows.entry(key).or_insert_with(|| Flow {

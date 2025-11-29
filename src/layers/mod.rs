@@ -4,6 +4,7 @@ use std::collections::HashMap;
 pub mod ethernet;
 pub mod ip;
 pub mod transport;
+pub mod tls;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LayerType {
@@ -12,6 +13,7 @@ pub enum LayerType {
     IPv6,
     TCP,
     UDP,
+    TLS,
     Unknown(u32),
 }
 
@@ -34,6 +36,7 @@ pub struct PacketContext {
     pub protocol: Option<Protocol>,
     pub is_syn: bool,
     pub is_ack: bool,
+    pub tags: Vec<String>,
 }
 
 pub trait LayerParser: Send + Sync {
@@ -55,6 +58,7 @@ impl ParserRegistry {
         registry.register(LayerType::IPv6, Box::new(ip::IPv6Parser));
         registry.register(LayerType::TCP, Box::new(transport::TcpParser));
         registry.register(LayerType::UDP, Box::new(transport::UdpParser));
+        registry.register(LayerType::TLS, Box::new(tls::TlsParser));
 
         registry
     }

@@ -122,6 +122,7 @@ impl PacketTableDelegate {
                 make_packet_col("dst_ip", "Dest IP", 150.),
                 make_packet_col("dst_port", "Dst Port", 100.),
                 make_packet_col("size", "Size", 100.),
+                make_packet_col("details", "Details", 300.),
             ],
             active_sort: Some((0, ColumnSort::Ascending)),
             start_timestamp,
@@ -220,6 +221,23 @@ impl TableDelegate for PacketTableDelegate {
         let packet = &self.packets[row_ix];
         let col = &self.columns[col_ix];
 
+        if col.key == "details" {
+            return div()
+                .flex()
+                .gap_1()
+                .children(packet.tags.iter().map(|tag| {
+                    let color = get_tag_color(tag);
+                    div()
+                        .px_1()
+                        .rounded_sm()
+                        .bg(color)
+                        .text_color(white())
+                        .text_xs()
+                        .child(tag.clone())
+                }))
+                .into_any_element();
+        }
+
         let content = match col.key.as_ref() {
             "timestamp" => {
                 if let Some(start) = self.start_timestamp {
@@ -242,7 +260,7 @@ impl TableDelegate for PacketTableDelegate {
             _ => String::new(),
         };
 
-        div().child(content)
+        div().child(content).into_any_element()
     }
 
     fn perform_sort(
@@ -283,4 +301,16 @@ fn make_packet_col(
         .sortable()
         .movable(false)
         .resizable(true)
+}
+
+fn get_tag_color(tag: &str) -> Hsla {
+    let mut hash: u32 = 0;
+    for byte in tag.bytes() {
+        hash = hash.wrapping_add(byte as u32);
+        hash = hash.wrapping_mul(1664525).wrapping_add(1013904223);
+    }
+    
+    let hue = (hash % 360) as f32 / 360.0;
+    // Use a slightly darker color for better contrast with white text
+    hsla(hue, 0.7, 0.4, 1.0)
 }

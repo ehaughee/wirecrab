@@ -225,6 +225,7 @@ fn generate_mock_packets(count: usize) -> Vec<Packet> {
             dst_port: Some(12345),
             length: 64 + (i % 1000) as u16,
             data: (0..64).map(|b| (b % 255) as u8).collect(),
+            tags: vec!["TCP".to_string(), "ACK".to_string()],
         }
     }).collect()
 }
