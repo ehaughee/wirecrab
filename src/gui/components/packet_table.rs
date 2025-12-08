@@ -213,11 +213,11 @@ impl TableDelegate for PacketTableDelegate {
     }
 
     fn render_td(
-        &self,
+        &mut self,
         row_ix: usize,
         col_ix: usize,
         _window: &mut Window,
-        cx: &mut App,
+        cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         let packet = &self.packets[row_ix];
         let col = &self.columns[col_ix];

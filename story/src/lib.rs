@@ -227,6 +227,26 @@ fn generate_mock_flows() -> HashMap<FlowKey, Flow> {
     let key2 = FlowKey::from_endpoints(ep3, ep4, Protocol::UDP);
     flows.insert(key2, flow2);
 
+    let ep5 = Endpoint {
+        ip: IPAddress::V4([172, 16, 0, 1]),
+        port: 0,
+    };
+    let ep6 = Endpoint {
+        ip: IPAddress::V4([192, 168, 1, 50]),
+        port: 0,
+    };
+
+    let flow3 = Flow {
+        timestamp: 1678886410.0,
+        protocol: Protocol::Other(1),
+        source: ep5,
+        destination: ep6,
+        packets: generate_mock_packets(15),
+    };
+
+    let key3 = FlowKey::from_endpoints(ep5, ep6, Protocol::Other(1));
+    flows.insert(key3, flow3);
+
     flows
 }
 

@@ -1,7 +1,10 @@
 use crate::flow::{Flow, FlowKey, Protocol};
 use gpui::*;
-use gpui_component::chart::AreaChart;
-use gpui_component::{ActiveTheme, Icon, IconName, StyledExt, h_flex, v_flex};
+use gpui_component::plot::scale::{Scale, ScaleBand, ScaleLinear};
+use gpui_component::plot::shape::Bar;
+use gpui_component::plot::{AxisText, Grid, Plot, PlotAxis, AXIS_GAP};
+use gpui_component::{ActiveTheme, Icon, IconName, PixelsExt, StyledExt, h_flex, v_flex};
+use gpui_component_macros::IntoPlot;
 
 /// Number of time buckets to divide the capture into.
 const DEFAULT_BUCKET_COUNT: usize = 30;
@@ -21,6 +24,149 @@ pub enum ProtocolCategory {
     Tcp,
     Udp,
     Other,
+}
+
+#[derive(Clone)]
+struct BucketSegment {
+    label: SharedString,
+    start: f64,
+    end: f64,
+    color: Hsla,
+}
+
+#[derive(IntoPlot)]
+struct StackedBarChart {
+    data: Vec<HistogramBucket>,
+    colors: [Hsla; 3],
+    tick_margin: usize,
+}
+
+impl StackedBarChart {
+    fn new(data: Vec<HistogramBucket>, colors: [Hsla; 3]) -> Self {
+        Self {
+            data,
+            colors,
+            tick_margin: 1,
+        }
+    }
+
+    fn tick_margin(mut self, tick_margin: usize) -> Self {
+        self.tick_margin = tick_margin;
+        self
+    }
+}
+
+impl Plot for StackedBarChart {
+    fn paint(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
+        if self.data.is_empty() {
+            return;
+        }
+
+        let width = bounds.size.width.as_f32();
+        let height = bounds.size.height.as_f32() - AXIS_GAP;
+
+        let labels: Vec<SharedString> = self
+            .data
+            .iter()
+            .map(|bucket| SharedString::from(bucket.label.clone()))
+            .collect();
+
+        let x_scale = ScaleBand::new(labels.clone(), vec![0., width])
+            .padding_inner(0.3)
+            .padding_outer(0.15);
+        let band_width = x_scale.band_width();
+
+        let totals: Vec<f64> = self
+            .data
+            .iter()
+            .map(|bucket| bucket.tcp + bucket.udp + bucket.other)
+            .collect();
+        let y_scale = ScaleLinear::new(
+            totals
+                .iter()
+                .copied()
+                .chain(std::iter::once(0.0))
+                .collect::<Vec<f64>>(),
+            vec![height, 10.],
+        );
+
+        let x_labels = labels
+            .iter()
+            .enumerate()
+            .filter_map(|(i, label)| {
+                if (i + 1) % self.tick_margin == 0 {
+                    x_scale.tick(label).map(|x_tick| {
+                        AxisText::new(label.clone(), x_tick + band_width / 2., cx.theme().muted_foreground)
+                            .align(TextAlign::Center)
+                    })
+                } else {
+                    None
+                }
+            });
+
+        PlotAxis::new()
+            .x(height)
+            .x_label(x_labels)
+            .stroke(cx.theme().border)
+            .paint(&bounds, window, cx);
+
+        Grid::new()
+            .y((0..=3).map(|i| height * i as f32 / 4.0).collect())
+            .stroke(cx.theme().border)
+            .dash_array(&[px(4.), px(2.)])
+            .paint(&bounds, window);
+
+        let segments: Vec<BucketSegment> = self
+            .data
+            .iter()
+            .map(|bucket| {
+                let mut start = 0.0;
+                let mut parts = Vec::with_capacity(3);
+
+                let tcp_end = start + bucket.tcp;
+                parts.push(BucketSegment {
+                    label: SharedString::from(bucket.label.clone()),
+                    start,
+                    end: tcp_end,
+                    color: self.colors[0],
+                });
+                start = tcp_end;
+
+                let udp_end = start + bucket.udp;
+                parts.push(BucketSegment {
+                    label: SharedString::from(bucket.label.clone()),
+                    start,
+                    end: udp_end,
+                    color: self.colors[1],
+                });
+                start = udp_end;
+
+                let other_end = start + bucket.other;
+                parts.push(BucketSegment {
+                    label: SharedString::from(bucket.label.clone()),
+                    start,
+                    end: other_end,
+                    color: self.colors[2],
+                });
+
+                parts
+            })
+            .flatten()
+            .collect();
+
+        let x_for_bar = x_scale.clone();
+        let y_for_bar = y_scale.clone();
+        let y_for_bar_2 = y_scale.clone();
+
+        Bar::new()
+            .data(&segments)
+            .band_width(band_width)
+            .x(move |seg| x_for_bar.tick(&seg.label))
+            .y0(move |seg| y_for_bar.tick(&seg.start).unwrap_or(height))
+            .y1(move |seg| y_for_bar_2.tick(&seg.end))
+            .fill(|seg| seg.color)
+            .paint(&bounds, window, cx);
+    }
 }
 
 impl ProtocolCategory {
@@ -263,19 +409,8 @@ fn render_chart(
     }
 
     let buckets_for_chart = buckets.clone();
-    
-    // Use AreaChart with stacked y().fill().stroke() calls for each protocol
-    let chart = AreaChart::new(buckets_for_chart)
-        .x(|b: &HistogramBucket| b.label.clone())
-        .y(|b: &HistogramBucket| b.tcp)
-        .stroke(tcp_color)
-        .fill(tcp_color.opacity(0.6))
-        .y(|b: &HistogramBucket| b.udp)
-        .stroke(udp_color)
-        .fill(udp_color.opacity(0.6))
-        .y(|b: &HistogramBucket| b.other)
-        .stroke(other_color)
-        .fill(other_color.opacity(0.6))
+
+    let chart = StackedBarChart::new(buckets_for_chart, [tcp_color, udp_color, other_color])
         .tick_margin(5);
 
     let bg_color = cx.theme().background;

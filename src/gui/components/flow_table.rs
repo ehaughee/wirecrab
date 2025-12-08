@@ -1,7 +1,7 @@
 use crate::flow::*;
 use gpui::*;
 use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
-use gpui_component::{ActiveTheme, Sizable, table};
+use gpui_component::{ActiveTheme, Sizable};
 use std::ops::Range;
 
 #[derive(IntoElement, Clone)]
@@ -206,11 +206,11 @@ impl TableDelegate for FlowTableDelegate {
     }
 
     fn render_td(
-        &self,
+        &mut self,
         row_ix: usize,
         col_ix: usize,
         _window: &mut Window,
-        _cx: &mut App,
+        _cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         let (_key, flow) = &self.flows[row_ix];
         let col = &self.columns[col_ix];
@@ -236,7 +236,12 @@ impl TableDelegate for FlowTableDelegate {
         div().child(content)
     }
 
-    fn render_tr(&self, row_ix: usize, _window: &mut Window, _cx: &mut App) -> Stateful<Div> {
+    fn render_tr(
+        &mut self,
+        row_ix: usize,
+        _window: &mut Window,
+        _cx: &mut Context<TableState<Self>>,
+    ) -> Stateful<Div> {
         div().id(row_ix)
     }
 
