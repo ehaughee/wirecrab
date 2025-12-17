@@ -176,61 +176,60 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             .checked_sub(last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_secs(0));
 
-        if crossterm::event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    if loading_progress.is_some() || error_message.is_some() {
-                        if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
-                            info!("TUI quit requested while loading/error state");
-                            break;
-                        }
-                    } else if app.filter_mode {
-                        // Handle filter input mode
-                        match key.code {
-                            KeyCode::Esc => {
-                                app.filter_mode = false;
-                                debug!("Exited filter mode");
-                            }
-                            KeyCode::Enter => {
-                                app.filter_mode = false;
-                                // Reset table selection when filter changes
-                                app.table_state.select(Some(0));
-                                debug!("Applied filter text");
-                            }
-                            KeyCode::Backspace => {
-                                app.filter.pop();
-                            }
-                            KeyCode::Char(c) => {
-                                app.filter.push(c);
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        // Handle normal navigation mode
-                        match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => {
-                                info!("TUI quit requested");
-                                break;
-                            }
-                            KeyCode::Char('/') => {
-                                app.filter_mode = true;
-                                debug!("Entered filter mode");
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                app.packet_table.next_flow(&mut app.table_state);
-                                debug!("Moved selection down");
-                            }
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                app.packet_table.previous_flow(&mut app.table_state);
-                                debug!("Moved selection up");
-                            }
-                            KeyCode::Enter | KeyCode::Char(' ') => {
-                                app.packet_table.toggle_selected_flow(&app.table_state);
-                                debug!("Toggled flow details");
-                            }
-                            _ => {}
-                        }
+        if crossterm::event::poll(timeout)? &&
+            let Event::Key(key) = event::read()? &&
+            key.kind == KeyEventKind::Press 
+        {
+            if loading_progress.is_some() || error_message.is_some() {
+                if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
+                    info!("TUI quit requested while loading/error state");
+                    break;
+                }
+            } else if app.filter_mode {
+                // Handle filter input mode
+                match key.code {
+                    KeyCode::Esc => {
+                        app.filter_mode = false;
+                        debug!("Exited filter mode");
                     }
+                    KeyCode::Enter => {
+                        app.filter_mode = false;
+                        // Reset table selection when filter changes
+                        app.table_state.select(Some(0));
+                        debug!("Applied filter text");
+                    }
+                    KeyCode::Backspace => {
+                        app.filter.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.filter.push(c);
+                    }
+                    _ => {}
+                }
+            } else {
+                // Handle normal navigation mode
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => {
+                        info!("TUI quit requested");
+                        break;
+                    }
+                    KeyCode::Char('/') => {
+                        app.filter_mode = true;
+                        debug!("Entered filter mode");
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        app.packet_table.next_flow(&mut app.table_state);
+                        debug!("Moved selection down");
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        app.packet_table.previous_flow(&mut app.table_state);
+                        debug!("Moved selection up");
+                    }
+                    KeyCode::Enter | KeyCode::Char(' ') => {
+                        app.packet_table.toggle_selected_flow(&app.table_state);
+                        debug!("Toggled flow details");
+                    }
+                    _ => {}
                 }
             }
         }

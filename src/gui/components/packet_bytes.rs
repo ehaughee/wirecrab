@@ -22,7 +22,7 @@ impl PacketBytesView {
     }
 
     pub fn create_list_state(bytes: &[u8]) -> ListState {
-        let row_count = (bytes.len() + BYTES_PER_ROW - 1) / BYTES_PER_ROW;
+        let row_count = bytes.len().div_ceil(BYTES_PER_ROW);
         tracing::info!(
             "Creating list state with {} rows for {} bytes",
             row_count,

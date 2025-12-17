@@ -119,7 +119,7 @@ impl Plot for StackedBarChart {
         let segments: Vec<BucketSegment> = self
             .data
             .iter()
-            .map(|bucket| {
+            .flat_map(|bucket| {
                 let mut start = 0.0;
                 let mut parts = Vec::with_capacity(3);
 
@@ -151,7 +151,6 @@ impl Plot for StackedBarChart {
 
                 parts
             })
-            .flatten()
             .collect();
 
         let x_for_bar = x_scale.clone();
@@ -422,7 +421,7 @@ fn render_chart(
     let bucket_count = buckets.len();
 
     // Clone buckets for the iterator
-    let buckets_for_hover: Vec<_> = buckets.iter().cloned().collect();
+    let buckets_for_hover: Vec<_> = buckets.to_vec();
 
     div()
         .h(px(120.0))

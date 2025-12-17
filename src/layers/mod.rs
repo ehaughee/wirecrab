@@ -47,6 +47,12 @@ pub struct ParserRegistry {
     parsers: HashMap<LayerType, Box<dyn LayerParser>>,
 }
 
+impl Default for ParserRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ParserRegistry {
     pub fn new() -> Self {
         let mut registry = Self {

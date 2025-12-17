@@ -44,7 +44,7 @@ impl PacketTable {
 
         self.state.update(cx, move |table, cx| {
             let delegate = table.delegate_mut();
-            delegate.set_flow(Some(&flow));
+            delegate.set_flow(Some(flow));
             delegate.set_start_timestamp(start_timestamp);
             table.refresh(cx);
         });

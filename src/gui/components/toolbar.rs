@@ -9,6 +9,12 @@ pub struct Toolbar {
     right: AnyElement,
 }
 
+impl Default for Toolbar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Toolbar {
     pub fn new() -> Self {
         Self {

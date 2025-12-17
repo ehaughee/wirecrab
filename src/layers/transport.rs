@@ -57,16 +57,12 @@ pub struct UdpParser;
 impl LayerParser for UdpParser {
     fn parse<'a>(&self, data: &'a [u8], context: &mut PacketContext) -> ParseResult<'a> {
         match UdpHeader::from_slice(data) {
-            Ok((header, rest)) => {
+            Ok((header, _)) => {
                 context.src_port = Some(header.source_port);
                 context.dst_port = Some(header.destination_port);
                 context.protocol = Some(Protocol::UDP);
 
-                if rest.is_empty() {
-                    ParseResult::Final
-                } else {
-                    ParseResult::Final
-                }
+                ParseResult::Final
             }
             Err(e) => ParseResult::Error(format!("UDP parse error: {}", e)),
         }

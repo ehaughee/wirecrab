@@ -81,13 +81,8 @@ impl FlowLoadController {
             progress: self.last_progress,
         };
 
-        loop {
-            let next = match self.loader.as_ref().and_then(|loader| loader.try_recv()) {
-                Some(status) => status,
-                None => break,
-            };
-
-            match next {
+        while let Some(message) = self.loader.as_ref().and_then(|loader| loader.try_recv()) {
+            match message {
                 LoadStatus::Progress(p) => {
                     self.last_progress = p;
                     trace!(progress = p, "Loader received progress update");

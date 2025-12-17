@@ -91,7 +91,7 @@ impl PacketTableState {
         table_state.select(Some(i));
     }
 
-    pub fn get_filtered_table_data(&mut self, filter: &str) -> (Vec<Row>, Vec<Constraint>) {
+    pub fn get_filtered_table_data(&'_ mut self, filter: &str) -> (Vec<Row<'_>>, Vec<Constraint>) {
         let mut rows = Vec::new();
         let mut row_to_flow_map = Vec::new();
         let flow_filter = FlowFilter::new(filter, self.start_timestamp);

@@ -79,31 +79,25 @@ where
 
                                 if first_packet_ts.is_none() {
                                     first_packet_ts = Some(timestamp);
-                                } else if let Some(ts) = first_packet_ts {
-                                    if timestamp < ts {
-                                        first_packet_ts = Some(timestamp);
-                                    }
+                                } else if let Some(ts) = first_packet_ts && timestamp < ts {
+                                    first_packet_ts = Some(timestamp);
                                 }
 
                                 let mut context = PacketContext::default();
                                 let mut current_layer = LayerType::Ethernet;
                                 let mut current_data = epb_packet_data;
 
-                                loop {
-                                    if let Some(parser) = registry.get(current_layer) {
-                                        match parser.parse(&current_data, &mut context) {
-                                            ParseResult::NextLayer {
-                                                next_layer,
-                                                payload,
-                                            } => {
-                                                current_layer = next_layer;
-                                                current_data = payload;
-                                            }
-                                            ParseResult::Final => break,
-                                            ParseResult::Error(_) => break,
+                                while let Some(parser) = registry.get(current_layer) {
+                                    match parser.parse(current_data, &mut context) {
+                                        ParseResult::NextLayer {
+                                            next_layer,
+                                            payload,
+                                        } => {
+                                            current_layer = next_layer;
+                                            current_data = payload;
                                         }
-                                    } else {
-                                        break;
+                                        ParseResult::Final => break,
+                                        ParseResult::Error(_) => break,
                                     }
                                 }
 

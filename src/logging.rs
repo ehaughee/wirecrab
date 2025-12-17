@@ -34,11 +34,9 @@ pub fn init_logging(to_stdout: bool, file_path: &Path, level: LevelFilter) -> Re
             .init();
         Ok(LoggingGuard::none())
     } else {
-        if let Some(parent) = file_path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("Failed to create log directory {parent:?}"))?;
-            }
+        if let Some(parent) = file_path.parent() && !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create log directory {parent:?}"))?;
         }
 
         let file = OpenOptions::new()
