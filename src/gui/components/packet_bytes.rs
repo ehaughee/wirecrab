@@ -23,7 +23,7 @@ impl PacketBytesView {
 
     pub fn create_list_state(bytes: &[u8]) -> ListState {
         let row_count = bytes.len().div_ceil(BYTES_PER_ROW);
-        tracing::info!(
+        tracing::trace!(
             "Creating list state with {} rows for {} bytes",
             row_count,
             bytes.len()
@@ -85,7 +85,7 @@ impl PacketBytesView {
 
 impl RenderOnce for PacketBytesView {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        tracing::info!(
+        tracing::trace!(
             "Rendering PacketBytesView. Has state: {}, Has bytes: {}",
             self.list_state.is_some(),
             self.bytes.is_some()
@@ -112,7 +112,7 @@ impl RenderOnce for PacketBytesView {
                                 let start = ix * BYTES_PER_ROW;
                                 let end = (start + BYTES_PER_ROW).min(bytes.len());
                                 let chunk = &bytes[start..end];
-                                tracing::info!("Rendering row {}", ix);
+                                tracing::trace!("Rendering row {}", ix);
                                 Self::render_row(start, chunk)
                                     .h(px(20.0))
                                     .into_any_element()
