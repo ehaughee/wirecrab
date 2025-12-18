@@ -1,6 +1,6 @@
 use super::decoder::decode_headers;
-use crate::flow::{Endpoint, Flow, FlowKey, IPAddress, Protocol};
-use crate::layers::PacketContext;
+use super::{dns, packets, state};
+use crate::flow::{Flow, FlowKey};
 use crate::layers::tls::TlsParser;
 use anyhow::{Context, Result};
 use pcap_parser::pcapng::EnhancedPacketBlock;
@@ -9,7 +9,7 @@ use pcap_parser::*;
 use std::collections::HashMap;
 use std::fs::File;
 use std::time::Instant;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 struct InterfaceDescription {
     linktype: Linktype,
@@ -30,7 +30,7 @@ where
     let mut reader = PcapNGReader::new(65536, file)
         .map_err(|e| anyhow::anyhow!(e))
         .context("Failed to create reader")?;
-    let mut state = ParseState::default();
+    let mut state = state::ParseState::default();
     let mut interfaces: Vec<InterfaceDescription> = Vec::new();
     let mut bytes_read = 0;
     let mut last_progress_update = 0;
@@ -85,8 +85,8 @@ where
                     PcapBlockOwned::NG(Block::SimplePacket(_)) => {
                         debug!("Unsupported block type: SimplePacket")
                     }
-                    PcapBlockOwned::NG(Block::NameResolution(_)) => {
-                        debug!("Unsupported block type: NameResolution")
+                    PcapBlockOwned::NG(Block::NameResolution(nrb)) => {
+                        dns::handle_name_resolution(&nrb, &mut state.name_resolutions);
                     }
                     PcapBlockOwned::NG(Block::InterfaceStatistics(_)) => {
                         debug!("Unsupported block type: InterfaceStatistics")
@@ -149,98 +149,23 @@ fn parse_timestamp(
     epb.decode_ts_f64(interface.ts_offset as u64, unit)
 }
 
-#[derive(Default)]
-struct ParseState {
-    flows: HashMap<FlowKey, Flow>,
-    first_packet_ts: Option<f64>,
-    packet_count: usize,
-}
-
 fn handle_enhanced_packet(
     epb: &EnhancedPacketBlock,
     interface: &InterfaceDescription,
     tls_parser: &TlsParser,
     epb_packet_data: &[u8],
-    state: &mut ParseState,
+    state: &mut state::ParseState,
 ) {
     let timestamp = parse_timestamp(epb, interface);
-    update_first_timestamp(&mut state.first_packet_ts, timestamp);
+    state::update_first_timestamp(&mut state.first_packet_ts, timestamp);
 
     if let Ok(context) = decode_headers(epb_packet_data, tls_parser) {
-        add_packet(epb_packet_data, context, timestamp, state);
-    }
-}
-
-fn update_first_timestamp(first_packet_ts: &mut Option<f64>, timestamp: f64) {
-    match first_packet_ts {
-        None => *first_packet_ts = Some(timestamp),
-        Some(current) if timestamp < *current => *first_packet_ts = Some(timestamp),
-        _ => {}
-    }
-}
-
-fn add_packet(
-    epb_packet_data: &[u8],
-    context: PacketContext,
-    timestamp: f64,
-    state: &mut ParseState,
-) {
-    if let Some((src_ip, dst_ip, src_port, dst_port, protocol)) = unpack_context(&context) {
-        let src_ep = Endpoint::new(src_ip, src_port);
-        let dst_ep = Endpoint::new(dst_ip, dst_port);
-        let key = FlowKey::from_endpoints(src_ep, dst_ep, protocol);
-        let packet_length = u16::try_from(epb_packet_data.len()).unwrap_or(u16::MAX);
-
-        let packet = crate::flow::Packet {
+        packets::add_packet(
+            epb_packet_data,
+            context,
             timestamp,
-            src_ip,
-            dst_ip,
-            src_port: Some(src_port),
-            dst_port: Some(dst_port),
-            length: packet_length,
-            data: epb_packet_data.to_vec(),
-            tags: context.tags,
-        };
-
-        let flow = state.flows.entry(key).or_insert_with(|| Flow {
-            timestamp,
-            protocol,
-            source: src_ep,
-            destination: dst_ep,
-            packets: Vec::new(),
-        });
-
-        if protocol == Protocol::TCP && context.is_syn && !context.is_ack {
-            flow.source = src_ep;
-            flow.destination = dst_ep;
-        }
-
-        flow.packets.push(packet);
-        state.packet_count += 1;
-        trace!(
-            packet_index = state.packet_count,
-            protocol = ?protocol,
-            src = %src_ip,
-            dst = %dst_ip,
-            src_port = src_port,
-            dst_port = dst_port,
-            length = packet_length,
-            "Captured packet"
+            &mut state.flows,
+            &mut state.packet_count,
         );
-    }
-}
-
-fn unpack_context(context: &PacketContext) -> Option<(IPAddress, IPAddress, u16, u16, Protocol)> {
-    match (
-        context.src_ip,
-        context.dst_ip,
-        context.src_port,
-        context.dst_port,
-        context.protocol,
-    ) {
-        (Some(src_ip), Some(dst_ip), Some(src_port), Some(dst_port), Some(protocol)) => {
-            Some((src_ip, dst_ip, src_port, dst_port, protocol))
-        }
-        _ => None,
     }
 }
