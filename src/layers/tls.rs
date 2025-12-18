@@ -1,4 +1,4 @@
-use crate::layers::{LayerParser, PacketContext, ParseResult};
+use crate::layers::PacketContext;
 use tls_parser::{TlsMessage, TlsMessageHandshake, TlsRecordType, TlsVersion, parse_tls_plaintext};
 use tracing::warn;
 
@@ -13,8 +13,8 @@ enum ContentType {
 
 pub struct TlsParser;
 
-impl LayerParser for TlsParser {
-    fn parse<'a>(&self, data: &'a [u8], context: &mut PacketContext) -> ParseResult<'a> {
+impl TlsParser {
+    pub fn parse(&self, data: &[u8], context: &mut PacketContext) {
         let mut input = data;
 
         while !input.is_empty() {
@@ -36,8 +36,6 @@ impl LayerParser for TlsParser {
                 Err(_) => break, // incomplete or invalid; stop at current packet boundary
             }
         }
-
-        ParseResult::Final
     }
 }
 

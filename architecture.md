@@ -11,13 +11,11 @@
 
 # Wirecrab Architecture
 
-Wirecrab is a packet analysis tool written in Rust. It supports parsing PCAP files and visualizing the data through two different user interfaces: a Terminal User Interface (TUI) and a Graphical User Interface (GUI).
+Wirecrab is a packet analysis tool written in Rust. It parses PCAP files and visualizes network flows in either a Terminal User Interface (TUI) or a Graphical User Interface (GUI). Core parsing, data modeling, and loading are decoupled from both UIs.
 
 ## Core Architecture
 
-The core logic is separated from the presentation layers.
-
-### Data Models (`src/flow.rs`)
+### Data Models (`src/flow/mod.rs`)
 
 ```mermaid
 classDiagram
@@ -27,6 +25,7 @@ classDiagram
         +Endpoint source
         +Endpoint destination
         +Vec~Packet~ packets
+        +usize total_bytes()
     }
     class Packet {
         +f64 timestamp
@@ -36,6 +35,7 @@ classDiagram
         +IPAddress dst_ip
         +Option~u16~ src_port
         +Option~u16~ dst_port
+        +Vec~String~ tags
     }
     class FlowKey {
         +FlowEndpoints endpoints
@@ -57,6 +57,7 @@ classDiagram
         +Option~Protocol~ protocol
         +bool is_syn
         +bool is_ack
+        +Vec~String~ tags
     }
 
     Flow *-- Endpoint
@@ -65,40 +66,42 @@ classDiagram
     FlowEndpoints *-- Endpoint
 ```
 
-- **Packet**: Represents a single captured packet with timestamp, length, and raw data. Length is stored as a saturated `u16` (pcap provides up to `u32`) because the UI panes only need 64 KB windows of data, and the raw bytes are kept alongside it for display.
-- **Flow**: Represents a bidirectional stream of packets between two endpoints (IP:Port pairs). It aggregates individual `Packet`s, tracks the initiating endpoint, and exposes helpers such as `total_bytes()` for lazy aggregation in tables.
-- **FlowKey**: A canonical key used to identify a flow, consisting of sorted endpoints and the protocol. This ensures packets from A->B and B->A map to the same flow.
-- **PacketContext**: A transient structure used during parsing to accumulate metadata (IPs, ports, flags) as the packet traverses different protocol layers.
+- **Packet**: Captured packet with timestamp, saturated length (`u16`), raw bytes, and optional ports plus tags from higher-layer parsing.
+- **Flow**: Bidirectional aggregation of packets keyed by canonicalized endpoints + protocol. Includes helpers like `total_bytes()` for UI summaries.
+- **FlowKey**: Stable flow identity built from sorted endpoints and protocol to group both directions.
+- **PacketContext**: Transient metadata container filled during decoding (IPs, ports, protocol, TCP flags, TLS tags) before constructing a `Packet`.
 
-### Ingestion (`src/parser.rs` & `src/layers/`)
+### Ingestion (`src/parser/` + `src/layers/`)
 
-The parsing logic uses an extensible, layered architecture.
+Parsing is centralized in the `parser` module:
 
 ```mermaid
 flowchart LR
-    PCAP[PCAP File] --> Parser[src/parser.rs]
-    Parser -->|Iterate Blocks| PcapParser[pcap-parser crate]
-    Parser -->|Get Parser| Registry[ParserRegistry]
-    Registry -->|Delegate| Layer[LayerParser Implementation]
-    Layer -->|Parse| Result[ParseResult]
-    Result -->|Next Layer| Registry
-    Result -->|Final| Flows[HashMap<FlowKey, Flow>]
-    Flows -->|Pass Ownership| Main[src/main.rs]
-    Main -->|--ui| GUI[GUI Runner]
-    Main -->|--tui| TUI[TUI Runner]
+    PCAP[PCAP file] --> Reader[src/parser/reader.rs]
+    Reader -->|blocks| PcapNG[pcap-parser]
+    Reader -->|decode| Decoder[src/parser/decoder.rs]
+    Decoder -->|headers| PacketHeaders[etherparse::PacketHeaders]
+    Decoder -->|TLS heuristic| TLS[tls-parser]
+    Decoder --> Context[PacketContext]
+    Context --> FlowKey
+    FlowKey --> Flows[HashMap<FlowKey,Flow>]
+    Flows --> Loader[src/loader.rs]
+    Loader --> GUI[GUI]
+    Loader --> TUI[TUI]
 ```
 
-- **Parser Loop**: Iterates over PCAP blocks using `pcap-parser`.
-- **Layered Parsing**:
-  - Uses a `ParserRegistry` to manage parsers for different protocols (`LayerType`).
-  - **`LayerParser` Trait**: Defines the interface for parsing a specific protocol layer.
-  - **Implementations**: `EthernetParser`, `IPv4Parser`, `IPv6Parser`, `TcpParser`, `UdpParser` (wrapping `etherparse`).
-  - The parser loop dynamically resolves the next layer based on the `ParseResult` returned by the current layer, while updating a shared `PacketContext`.
-- **Aggregation**: Aggregates packets into `Flow`s stored in a `HashMap<FlowKey, Flow>`.
+- **Reader**: Iterates PCAP-NG blocks, tracks per-interface timestamp resolution, and streams progress. For each Ethernet packet, it decodes headers, stamps timestamps, and inserts `Packet`s into the appropriate flow.
+- **Decoder**: Uses `etherparse::PacketHeaders::from_ethernet_slice` to populate `PacketContext` (IPs, ports, protocol, TCP flags). A small TLS heuristic (`looks_like_tls`) gates `tls-parser` to add TLS handshake/application tags without failing the decode path.
+- **Aggregation**: Packets are pushed into a `HashMap<FlowKey, Flow>`, swapping source/destination on TCP SYN to honor initiator direction. The earliest timestamp is kept as an optional origin for relative displays.
+
+### Loading (`src/loader.rs`)
+
+- `Loader` spawns a background thread that runs `parser::parse_pcap`, emitting `LoadStatus` messages (progress/loaded/error) over `mpsc`.
+- `FlowLoadController` polls non-blockingly to surface progress to either UI and hands off the final flow map plus the optional capture start timestamp.
 
 ## User Interface Architectures
 
-The application is designed to support multiple frontends by decoupling the data loading from the run loop.
+The UIs consume the same flow data and loader API.
 
 ```mermaid
 graph TD
@@ -108,6 +111,7 @@ graph TD
         T_Input[Crossterm Events]
         T_Draw[Terminal::draw]
         
+        T_Loop -->|Poll loader| T_State
         T_Loop -->|Poll| T_Input
         T_Input -->|Update| T_State
         T_Loop -->|Render| T_Draw
@@ -127,33 +131,21 @@ graph TD
     end
 ```
 
-### TUI Architecture (`src/tui/`)
-- **Library**: Built with `ratatui` and `crossterm`.
-- **Structure**:
-  - **Immediate Mode**: The TUI runs a main loop that redraws the entire screen on every tick or input event.
-  - **State Management**: `AppState` holds the loaded flows and UI state (selected row, filter string, etc.).
-  - **Widgets**: Custom widgets (like `PacketTableState`) encapsulate logic for specific views.
-- **Input Handling**: Raw terminal input is captured and processed in the main loop to update the `AppState`.
+### TUI (`src/tui/`)
+- Built with `ratatui` + `crossterm`.
+- Immediate-mode redraw each tick/input; `AppState` holds flows, selection, filter, etc.
+- Custom widgets (e.g., packet table) render directly from the flow map.
 
-### GUI Architecture (`src/gui/`)
-- **Library**: Built with `gpui` (Zed's UI framework).
-- **Structure**:
-  - **Component-Based**: The UI is built from a tree of views/components.
-  - **Event-Driven**: Unlike the TUI's polling loop, GPUI is event-driven. User actions trigger callbacks that update the model and request a re-render.
-  - **State Management**:
-    - `WirecrabApp` is the root view/model.
-    - It holds `Entity` references to child components (like `TableState`).
-    - `gpui-component` is used for high-level widgets (Tables, Inputs).
-- **Data Flow**:
-  - The `WirecrabApp` owns the `HashMap` of flows.
-  - It passes data down to delegates (`FlowTableDelegate`, `PacketTableDelegate`).
-  - Delegates implement `TableDelegate` traits to define how rows are rendered.
+### GUI (`src/gui/`)
+- Built with `gpui` / `gpui-component`.
+- Event-driven components and delegates render tables and panes using shared flow data.
 
-## Directory Structure
+## Directory Structure (selected)
 
-- `src/main.rs`: Entry point. Handles CLI args and dispatches to TUI or GUI.
-- `src/parser.rs`: PCAP parsing logic and loop.
-- `src/layers/`: Protocol parser implementations and registry.
-- `src/flow.rs`: Core data structures.
+- `src/main.rs`: CLI entry; chooses GUI/TUI.
+- `src/parser/`: PCAP reader (`reader.rs`) and header decoder (`decoder.rs`); re-exports `parse_pcap` in `mod.rs`.
+- `src/loader.rs`: Background loader and polling controller.
+- `src/flow/`: Core flow/packet models and filters.
+- `src/layers/`: Shared parsing structs (currently TLS tagging and `PacketContext`).
 - `src/gui/`: GPUI implementation.
 - `src/tui/`: Ratatui implementation.

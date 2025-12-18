@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use tracing::{info, warn};
 #[cfg(feature = "ui")]
 use wirecrab::gui;
-use wirecrab::{logging, tui};
+#[cfg(feature = "tui")]
+use wirecrab::tui;
+use wirecrab::logging;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

@@ -1,5 +1,5 @@
+use crate::parser::parse_pcap;
 use crate::flow::{Flow, FlowKey};
-use crate::parser;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
@@ -22,7 +22,7 @@ impl Loader {
         let path_clone = path.clone();
         info!(path = ?path_clone, "Spawning loader thread");
         thread::spawn(move || {
-            let result = parser::parse_pcap(&path_clone, |progress| {
+            let result = parse_pcap(&path_clone, |progress| {
                 trace!(progress, "Parser progress update");
                 let _ = tx.send(LoadStatus::Progress(progress));
             });
