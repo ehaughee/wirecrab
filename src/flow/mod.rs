@@ -3,6 +3,9 @@ use std::fmt;
 
 pub mod filter;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IPAddress {
     V4([u8; 4]),

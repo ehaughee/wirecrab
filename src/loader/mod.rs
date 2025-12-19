@@ -6,6 +6,9 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use tracing::{error, info, trace};
 
+#[cfg(test)]
+mod tests;
+
 pub enum LoadStatus {
     Progress(f32),
     Loaded(HashMap<FlowKey, Flow>, Option<f64>),

@@ -5,4 +5,7 @@ pub mod reader;
 pub mod state;
 pub mod tcp;
 
+#[cfg(test)]
+mod tests;
+
 pub use reader::parse_pcap;
