@@ -1,4 +1,5 @@
 use crate::flow::{IPAddress, Protocol};
+use crate::layers::PacketContext;
 use crate::layers::tls::TlsParser;
 use crate::parser::decoder::decode_headers;
 use crate::parser::parse_pcap;
@@ -54,6 +55,46 @@ fn build_ipv6_udp_packet(payload: &[u8]) -> Vec<u8> {
     let mut packet = Vec::with_capacity(builder.size(payload.len()));
     builder.write(&mut packet, payload).unwrap();
     packet
+}
+
+fn build_dns_response_payload(v6_ip: [u8; 16]) -> Vec<u8> {
+    let mut buf = Vec::new();
+
+    buf.extend_from_slice(&0x0001u16.to_be_bytes()); // id
+    buf.extend_from_slice(&0x8180u16.to_be_bytes()); // standard response, no error
+    buf.extend_from_slice(&0x0001u16.to_be_bytes()); // qdcount
+    buf.extend_from_slice(&0x0002u16.to_be_bytes()); // ancount
+    buf.extend_from_slice(&0x0000u16.to_be_bytes()); // nscount
+    buf.extend_from_slice(&0x0000u16.to_be_bytes()); // arcount
+
+    buf.push(7);
+    buf.extend_from_slice(b"example");
+    buf.push(5);
+    buf.extend_from_slice(b"local");
+    buf.push(0);
+
+    buf.extend_from_slice(&0x0001u16.to_be_bytes()); // QTYPE A
+    buf.extend_from_slice(&0x0001u16.to_be_bytes()); // QCLASS IN
+
+    // Answer 1: A record using pointer to question name at offset 12 (0x0c)
+    buf.push(0xc0);
+    buf.push(0x0c);
+    buf.extend_from_slice(&0x0001u16.to_be_bytes()); // TYPE A
+    buf.extend_from_slice(&0x0001u16.to_be_bytes()); // CLASS IN
+    buf.extend_from_slice(&0x0000003cu32.to_be_bytes()); // TTL 60s
+    buf.extend_from_slice(&0x0004u16.to_be_bytes()); // RDLENGTH
+    buf.extend_from_slice(&[1, 2, 3, 4]); // RDATA
+
+    // Answer 2: AAAA record, pointer to same name
+    buf.push(0xc0);
+    buf.push(0x0c);
+    buf.extend_from_slice(&0x001cu16.to_be_bytes()); // TYPE AAAA
+    buf.extend_from_slice(&0x0001u16.to_be_bytes()); // CLASS IN
+    buf.extend_from_slice(&0x0000003cu32.to_be_bytes()); // TTL 60s
+    buf.extend_from_slice(&0x0010u16.to_be_bytes()); // RDLENGTH
+    buf.extend_from_slice(&v6_ip);
+
+    buf
 }
 
 #[test]
@@ -173,6 +214,40 @@ fn decode_ipv6_tcp_and_udp() {
     assert_eq!(udp_ctx.protocol, Some(Protocol::UDP));
     assert!(matches!(udp_ctx.src_ip, Some(IPAddress::V6(_))));
     assert!(matches!(udp_ctx.dst_ip, Some(IPAddress::V6(_))));
+}
+
+#[test]
+fn dns_responses_populate_name_resolutions() {
+    let v6_ip = [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+    let payload = build_dns_response_payload(v6_ip);
+
+    let context = PacketContext {
+        src_ip: Some(IPAddress::V4([8, 8, 8, 8])),
+        dst_ip: Some(IPAddress::V4([10, 0, 0, 1])),
+        src_port: Some(53),
+        dst_port: Some(55555),
+        protocol: Some(Protocol::UDP),
+        is_syn: false,
+        is_ack: false,
+        tags: Vec::new(),
+        udp_payload: Some(payload.clone()),
+    };
+
+    let mut resolutions = HashMap::new();
+    crate::parser::dns::handle_dns_response(&context, &mut resolutions);
+    crate::parser::dns::handle_dns_response(&context, &mut resolutions);
+
+    let v4_names = resolutions
+        .get(&IPAddress::V4([1, 2, 3, 4]))
+        .expect("ipv4 answer inserted");
+    assert_eq!(v4_names.len(), 1);
+    assert!(v4_names.contains(&"example.local".to_string()));
+
+    let v6_names = resolutions
+        .get(&IPAddress::V6(v6_ip))
+        .expect("ipv6 answer inserted");
+    assert_eq!(v6_names.len(), 1);
+    assert!(v6_names.contains(&"example.local".to_string()));
 }
 
 #[test]

@@ -41,6 +41,7 @@ pub fn decode_headers(packet: &[u8], tls_parser: &TlsParser) -> Result<PacketCon
                 context.src_port = Some(udp.source_port);
                 context.dst_port = Some(udp.destination_port);
                 context.protocol = Some(Protocol::UDP);
+                context.udp_payload = Some(payload.to_vec());
             }
             _ => {}
         }

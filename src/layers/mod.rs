@@ -12,6 +12,7 @@ pub struct PacketContext {
     pub is_syn: bool,
     pub is_ack: bool,
     pub tags: Vec<String>,
+    pub udp_payload: Option<Vec<u8>>,
 }
 
 // Context populated while decoding packets; shared by decoders.

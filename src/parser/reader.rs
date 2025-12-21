@@ -160,6 +160,7 @@ fn handle_enhanced_packet(
     state::update_first_timestamp(&mut state.first_packet_ts, timestamp);
 
     if let Ok(context) = decode_headers(epb_packet_data, tls_parser) {
+        dns::handle_dns_response(&context, &mut state.name_resolutions);
         packets::add_packet(
             epb_packet_data,
             context,
