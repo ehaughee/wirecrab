@@ -68,6 +68,7 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             FlowLoadStatus::Ready {
                 flows,
                 start_timestamp,
+                ..
             } => {
                 app = AppState::new(flows, start_timestamp);
                 loading_progress = None;

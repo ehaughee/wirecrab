@@ -1,9 +1,11 @@
-use crate::flow::{Flow, FlowKey, Packet};
+use crate::flow::filter::FlowFormatter;
+use crate::flow::{Flow, FlowKey, Packet, IPAddress};
 use gpui::*;
 use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, ColorName, Sizable, StyledExt, h_flex};
 use std::ops::Range;
+use std::collections::HashMap;
 
 #[derive(IntoElement, Clone)]
 pub struct PacketTable {
@@ -11,6 +13,8 @@ pub struct PacketTable {
     flow_key: Option<FlowKey>,
     packet_count: usize,
     last_start_timestamp: Option<f64>,
+    name_resolutions: HashMap<IPAddress, Vec<String>>,
+    prefer_names: bool,
 }
 
 impl PacketTable {
@@ -19,39 +23,65 @@ impl PacketTable {
         cx: &mut Context<Owner>,
         flow: &Flow,
         start_timestamp: Option<f64>,
+        prefer_names: bool,
+        name_resolutions: HashMap<IPAddress, Vec<String>>,
     ) -> Self {
         let state =
-            PacketTableDelegate::create_entity(window, cx, Some(flow.clone()), start_timestamp);
+            PacketTableDelegate::create_entity(
+                window,
+                cx,
+                Some(flow.clone()),
+                start_timestamp,
+                prefer_names,
+                name_resolutions.clone(),
+            );
         let flow_key = FlowKey::from_endpoints(flow.source, flow.destination, flow.protocol);
         Self {
             state,
             flow_key: Some(flow_key),
             packet_count: flow.packets.len(),
             last_start_timestamp: start_timestamp,
+            name_resolutions,
+            prefer_names,
         }
     }
 
-    pub fn update(&mut self, flow: &Flow, start_timestamp: Option<f64>, cx: &mut App) {
+    pub fn update(
+        &mut self,
+        flow: &Flow,
+        start_timestamp: Option<f64>,
+        prefer_names: bool,
+        name_resolutions: HashMap<IPAddress, Vec<String>>,
+        cx: &mut App,
+    ) {
         let flow_key = FlowKey::from_endpoints(flow.source, flow.destination, flow.protocol);
         let packet_count = flow.packets.len();
         let needs_refresh = self.flow_key != Some(flow_key)
             || self.packet_count != packet_count
-            || self.last_start_timestamp != start_timestamp;
+            || self.last_start_timestamp != start_timestamp
+            || self.prefer_names != prefer_names
+            || self.name_resolutions != name_resolutions;
 
         if !needs_refresh {
             return;
         }
 
+        let resolutions = name_resolutions.clone();
+
         self.state.update(cx, move |table, cx| {
             let delegate = table.delegate_mut();
             delegate.set_flow(Some(flow));
             delegate.set_start_timestamp(start_timestamp);
+            delegate.set_name_resolutions(resolutions.clone());
+            delegate.set_prefer_names(prefer_names);
             table.refresh(cx);
         });
 
         self.flow_key = Some(flow_key);
         self.packet_count = packet_count;
         self.last_start_timestamp = start_timestamp;
+        self.name_resolutions = name_resolutions;
+        self.prefer_names = prefer_names;
     }
 
     pub fn entity(&self) -> &Entity<TableState<PacketTableDelegate>> {
@@ -110,10 +140,17 @@ pub struct PacketTableDelegate {
     pub columns: Vec<Column>,
     pub active_sort: Option<(usize, ColumnSort)>,
     pub start_timestamp: Option<f64>,
+    pub prefer_names: bool,
+    pub name_resolutions: HashMap<IPAddress, Vec<String>>,
 }
 
 impl PacketTableDelegate {
-    pub fn new(flow: Option<&Flow>, start_timestamp: Option<f64>) -> Self {
+    pub fn new(
+        flow: Option<&Flow>,
+        start_timestamp: Option<f64>,
+        prefer_names: bool,
+        name_resolutions: HashMap<IPAddress, Vec<String>>,
+    ) -> Self {
         Self {
             packets: flow.map_or(vec![], |f| f.packets.clone()),
             columns: vec![
@@ -127,6 +164,8 @@ impl PacketTableDelegate {
             ],
             active_sort: Some((0, ColumnSort::Ascending)),
             start_timestamp,
+            prefer_names,
+            name_resolutions,
         }
     }
 
@@ -139,6 +178,18 @@ impl PacketTableDelegate {
 
     pub fn set_start_timestamp(&mut self, timestamp: Option<f64>) {
         self.start_timestamp = timestamp;
+    }
+
+    pub fn set_name_resolutions(&mut self, resolutions: HashMap<IPAddress, Vec<String>>) {
+        self.name_resolutions = resolutions;
+    }
+
+    pub fn set_prefer_names(&mut self, prefer_names: bool) {
+        self.prefer_names = prefer_names;
+    }
+
+    fn display_ip(&self, ip: &IPAddress) -> String {
+        FlowFormatter::ip_address(ip, self.prefer_names, Some(&self.name_resolutions))
     }
 
     fn sort_data(&mut self, col_ix: usize, sort: ColumnSort) {
@@ -155,13 +206,53 @@ impl PacketTableDelegate {
                 ColumnSort::Default => {}
             },
             "src_ip" => match sort {
-                ColumnSort::Ascending => self.packets.sort_by(|a, b| a.src_ip.cmp(&b.src_ip)),
-                ColumnSort::Descending => self.packets.sort_by(|a, b| b.src_ip.cmp(&a.src_ip)),
+                ColumnSort::Ascending => {
+                    let prefer_names = self.prefer_names;
+                    let resolutions = self.name_resolutions.clone();
+                    self.packets.sort_by(|a, b| {
+                        let a_disp =
+                            FlowFormatter::ip_address(&a.src_ip, prefer_names, Some(&resolutions));
+                        let b_disp =
+                            FlowFormatter::ip_address(&b.src_ip, prefer_names, Some(&resolutions));
+                        a_disp.cmp(&b_disp)
+                    })
+                }
+                ColumnSort::Descending => {
+                    let prefer_names = self.prefer_names;
+                    let resolutions = self.name_resolutions.clone();
+                    self.packets.sort_by(|a, b| {
+                        let a_disp =
+                            FlowFormatter::ip_address(&a.src_ip, prefer_names, Some(&resolutions));
+                        let b_disp =
+                            FlowFormatter::ip_address(&b.src_ip, prefer_names, Some(&resolutions));
+                        b_disp.cmp(&a_disp)
+                    })
+                }
                 ColumnSort::Default => {}
             },
             "dst_ip" => match sort {
-                ColumnSort::Ascending => self.packets.sort_by(|a, b| a.dst_ip.cmp(&b.dst_ip)),
-                ColumnSort::Descending => self.packets.sort_by(|a, b| b.dst_ip.cmp(&a.dst_ip)),
+                ColumnSort::Ascending => {
+                    let prefer_names = self.prefer_names;
+                    let resolutions = self.name_resolutions.clone();
+                    self.packets.sort_by(|a, b| {
+                        let a_disp =
+                            FlowFormatter::ip_address(&a.dst_ip, prefer_names, Some(&resolutions));
+                        let b_disp =
+                            FlowFormatter::ip_address(&b.dst_ip, prefer_names, Some(&resolutions));
+                        a_disp.cmp(&b_disp)
+                    })
+                }
+                ColumnSort::Descending => {
+                    let prefer_names = self.prefer_names;
+                    let resolutions = self.name_resolutions.clone();
+                    self.packets.sort_by(|a, b| {
+                        let a_disp =
+                            FlowFormatter::ip_address(&a.dst_ip, prefer_names, Some(&resolutions));
+                        let b_disp =
+                            FlowFormatter::ip_address(&b.dst_ip, prefer_names, Some(&resolutions));
+                        b_disp.cmp(&a_disp)
+                    })
+                }
                 ColumnSort::Default => {}
             },
             "src_port" => match sort {
@@ -188,10 +279,17 @@ impl PacketTableDelegate {
         cx: &mut Context<Owner>,
         flow: Option<Flow>,
         start_timestamp: Option<f64>,
+        prefer_names: bool,
+        name_resolutions: HashMap<IPAddress, Vec<String>>,
     ) -> Entity<TableState<Self>> {
         cx.new(move |cx| {
             TableState::new(
-                PacketTableDelegate::new(flow.as_ref(), start_timestamp),
+                PacketTableDelegate::new(
+                    flow.as_ref(),
+                    start_timestamp,
+                    prefer_names,
+                    name_resolutions,
+                ),
                 window,
                 cx,
             )
@@ -245,8 +343,8 @@ impl TableDelegate for PacketTableDelegate {
                     format!("{:.6}", packet.timestamp)
                 }
             }
-            "src_ip" => packet.src_ip.to_string(),
-            "dst_ip" => packet.dst_ip.to_string(),
+            "src_ip" => self.display_ip(&packet.src_ip),
+            "dst_ip" => self.display_ip(&packet.dst_ip),
             "src_port" => packet
                 .src_port
                 .map(|p| p.to_string())
@@ -279,7 +377,6 @@ impl TableDelegate for PacketTableDelegate {
         }
         self.sort_data(col_ix, sort);
     }
-
     fn visible_rows_changed(
         &mut self,
         _visible_range: Range<usize>,

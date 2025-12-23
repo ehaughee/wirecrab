@@ -49,7 +49,7 @@ fn total_bytes_sums_packet_lengths() {
 
 #[test]
 fn match_all_accepts_everything() {
-    let filter = FlowFilter::new("   ", None);
+    let filter = FlowFilter::new("   ", None, false, None);
     assert!(filter.matches_flow(&sample_flow()));
 }
 
@@ -57,15 +57,15 @@ fn match_all_accepts_everything() {
 fn matches_ip_port_and_protocol() {
     let flow = sample_flow();
 
-    assert!(FlowFilter::new("10.0.0.1", None).matches_flow(&flow));
-    assert!(FlowFilter::new("80", None).matches_flow(&flow));
-    assert!(FlowFilter::new("tcp", None).matches_flow(&flow));
+    assert!(FlowFilter::new("10.0.0.1", None, false, None).matches_flow(&flow));
+    assert!(FlowFilter::new("80", None, false, None).matches_flow(&flow));
+    assert!(FlowFilter::new("tcp", None, false, None).matches_flow(&flow));
 }
 
 #[test]
 fn matches_relative_timestamp() {
     let flow = sample_flow();
-    let filter = FlowFilter::new("3.000000", Some(2.0));
+    let filter = FlowFilter::new("3.000000", Some(2.0), false, None);
     assert!(filter.matches_flow(&flow));
 }
 
@@ -79,6 +79,6 @@ fn matches_ipv6_and_other_protocol() {
         packets: vec![],
     };
 
-    assert!(FlowFilter::new("fe80:0:0:0:0:0:0:1", None).matches_flow(&flow));
-    assert!(FlowFilter::new("proto-99", None).matches_flow(&flow));
+    assert!(FlowFilter::new("fe80:0:0:0:0:0:0:1", None, false, None).matches_flow(&flow));
+    assert!(FlowFilter::new("proto-99", None, false, None).matches_flow(&flow));
 }

@@ -49,10 +49,11 @@ fn controller_loads_valid_pcap() {
     let mut saw_timestamp = false;
     for _ in 0..200 {
         match controller.poll() {
-            FlowLoadStatus::Ready { flows, start_timestamp } => {
+            FlowLoadStatus::Ready { flows, start_timestamp, name_resolutions } => {
                 got_ready = true;
                 flows_seen = flows.len();
                 saw_timestamp = start_timestamp.is_some();
+                let _ = name_resolutions.len();
                 break;
             }
             FlowLoadStatus::Loading { .. } => sleep(Duration::from_millis(10)),

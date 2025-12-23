@@ -94,7 +94,7 @@ impl PacketTableState {
     pub fn get_filtered_table_data(&'_ mut self, filter: &str) -> (Vec<Row<'_>>, Vec<Constraint>) {
         let mut rows = Vec::new();
         let mut row_to_flow_map = Vec::new();
-        let flow_filter = FlowFilter::new(filter, self.start_timestamp);
+        let flow_filter = FlowFilter::new(filter, self.start_timestamp, false, None);
         let timestamp_origin = flow_filter.timestamp_origin();
 
         for flow_key in self.flow_order.clone() {
@@ -104,8 +104,8 @@ impl PacketTableState {
                 }
 
                 let timestamp_str = FlowFormatter::timestamp(flow.timestamp, timestamp_origin);
-                let endpoint_a_ip = FlowFormatter::ip_address(&flow.source.ip);
-                let endpoint_b_ip = FlowFormatter::ip_address(&flow.destination.ip);
+                let endpoint_a_ip = FlowFormatter::ip_address(&flow.source.ip, false, None);
+                let endpoint_b_ip = FlowFormatter::ip_address(&flow.destination.ip, false, None);
                 let endpoint_a_port = FlowFormatter::port(flow.source.port);
                 let endpoint_b_port = FlowFormatter::port(flow.destination.port);
                 let protocol_str = FlowFormatter::protocol(&flow.protocol);
@@ -132,11 +132,11 @@ impl PacketTableState {
                                 "  {}",
                                 FlowFormatter::timestamp(packet.timestamp, timestamp_origin)
                             )),
-                            Cell::from(FlowFormatter::ip_address(&packet.src_ip)),
+                            Cell::from(FlowFormatter::ip_address(&packet.src_ip, false, None)),
                             Cell::from(
                                 packet.src_port.map(FlowFormatter::port).unwrap_or_default(),
                             ),
-                            Cell::from(FlowFormatter::ip_address(&packet.dst_ip)),
+                            Cell::from(FlowFormatter::ip_address(&packet.dst_ip, false, None)),
                             Cell::from(
                                 packet.dst_port.map(FlowFormatter::port).unwrap_or_default(),
                             ),

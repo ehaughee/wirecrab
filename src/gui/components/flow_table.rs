@@ -1,8 +1,10 @@
 use crate::flow::*;
+use crate::flow::filter::FlowFormatter;
 use gpui::*;
 use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
 use gpui_component::{ActiveTheme, Sizable};
 use std::ops::Range;
+use std::collections::HashMap;
 
 #[derive(IntoElement, Clone)]
 pub struct FlowTable {
@@ -16,9 +18,18 @@ impl FlowTable {
         flows: Vec<(FlowKey, Flow)>,
         selected_flow: Option<FlowKey>,
         start_timestamp: Option<f64>,
+        prefer_names: bool,
+        name_resolutions: HashMap<IPAddress, Vec<String>>,
     ) -> Self {
-        let state =
-            FlowTableDelegate::create_entity(window, cx, flows, selected_flow, start_timestamp);
+        let state = FlowTableDelegate::create_entity(
+            window,
+            cx,
+            flows,
+            selected_flow,
+            start_timestamp,
+            prefer_names,
+            name_resolutions,
+        );
         Self { state }
     }
 
@@ -57,6 +68,8 @@ pub struct FlowTableDelegate {
     pub columns: Vec<Column>,
     pub active_sort: Option<(usize, ColumnSort)>,
     pub start_timestamp: Option<f64>,
+    pub prefer_names: bool,
+    pub name_resolutions: HashMap<IPAddress, Vec<String>>,
 }
 
 impl FlowTableDelegate {
@@ -64,6 +77,8 @@ impl FlowTableDelegate {
         flows: Vec<(FlowKey, Flow)>,
         selected_flow: Option<FlowKey>,
         start_timestamp: Option<f64>,
+        prefer_names: bool,
+        name_resolutions: HashMap<IPAddress, Vec<String>>,
     ) -> Self {
         Self {
             flows,
@@ -86,6 +101,8 @@ impl FlowTableDelegate {
             ],
             active_sort: Some((0, ColumnSort::Ascending)),
             start_timestamp,
+            prefer_names,
+            name_resolutions,
         }
     }
 
@@ -98,6 +115,22 @@ impl FlowTableDelegate {
 
     pub fn set_start_timestamp(&mut self, timestamp: Option<f64>) {
         self.start_timestamp = timestamp;
+    }
+
+    pub fn set_name_resolutions(&mut self, resolutions: HashMap<IPAddress, Vec<String>>) {
+        self.name_resolutions = resolutions;
+    }
+
+    pub fn set_prefer_names(&mut self, prefer_names: bool) {
+        self.prefer_names = prefer_names;
+    }
+
+    fn display_endpoint(&self, endpoint: &Endpoint) -> String {
+        FlowFormatter::endpoint(
+            endpoint,
+            self.prefer_names,
+            Some(&self.name_resolutions),
+        )
     }
 
     fn sort_data(&mut self, col_ix: usize, sort: ColumnSort) {
@@ -122,8 +155,28 @@ impl FlowTableDelegate {
                 ColumnSort::Default => {}
             },
             "source" => match sort {
-                ColumnSort::Ascending => self.flows.sort_by(|a, b| a.1.source.cmp(&b.1.source)),
-                ColumnSort::Descending => self.flows.sort_by(|a, b| b.1.source.cmp(&a.1.source)),
+                ColumnSort::Ascending => {
+                    let prefer_names = self.prefer_names;
+                    let resolutions = self.name_resolutions.clone();
+                    self.flows.sort_by(|a, b| {
+                        let a_display =
+                            FlowFormatter::endpoint(&a.1.source, prefer_names, Some(&resolutions));
+                        let b_display =
+                            FlowFormatter::endpoint(&b.1.source, prefer_names, Some(&resolutions));
+                        a_display.cmp(&b_display)
+                    })
+                }
+                ColumnSort::Descending => {
+                    let prefer_names = self.prefer_names;
+                    let resolutions = self.name_resolutions.clone();
+                    self.flows.sort_by(|a, b| {
+                        let a_display =
+                            FlowFormatter::endpoint(&a.1.source, prefer_names, Some(&resolutions));
+                        let b_display =
+                            FlowFormatter::endpoint(&b.1.source, prefer_names, Some(&resolutions));
+                        b_display.cmp(&a_display)
+                    })
+                }
                 ColumnSort::Default => {}
             },
             "source_port" => match sort {
@@ -136,12 +189,40 @@ impl FlowTableDelegate {
                 ColumnSort::Default => {}
             },
             "destination" => match sort {
-                ColumnSort::Ascending => self
-                    .flows
-                    .sort_by(|a, b| a.1.destination.cmp(&b.1.destination)),
-                ColumnSort::Descending => self
-                    .flows
-                    .sort_by(|a, b| b.1.destination.cmp(&a.1.destination)),
+                ColumnSort::Ascending => {
+                    let prefer_names = self.prefer_names;
+                    let resolutions = self.name_resolutions.clone();
+                    self.flows.sort_by(|a, b| {
+                        let a_display = FlowFormatter::endpoint(
+                            &a.1.destination,
+                            prefer_names,
+                            Some(&resolutions),
+                        );
+                        let b_display = FlowFormatter::endpoint(
+                            &b.1.destination,
+                            prefer_names,
+                            Some(&resolutions),
+                        );
+                        a_display.cmp(&b_display)
+                    })
+                }
+                ColumnSort::Descending => {
+                    let prefer_names = self.prefer_names;
+                    let resolutions = self.name_resolutions.clone();
+                    self.flows.sort_by(|a, b| {
+                        let a_display = FlowFormatter::endpoint(
+                            &a.1.destination,
+                            prefer_names,
+                            Some(&resolutions),
+                        );
+                        let b_display = FlowFormatter::endpoint(
+                            &b.1.destination,
+                            prefer_names,
+                            Some(&resolutions),
+                        );
+                        b_display.cmp(&a_display)
+                    })
+                }
                 ColumnSort::Default => {}
             },
             "destination_port" => match sort {
@@ -181,10 +262,18 @@ impl FlowTableDelegate {
         flows: Vec<(FlowKey, Flow)>,
         selected_flow: Option<FlowKey>,
         start_timestamp: Option<f64>,
+        prefer_names: bool,
+        name_resolutions: HashMap<IPAddress, Vec<String>>,
     ) -> Entity<TableState<Self>> {
         cx.new(move |cx| {
             TableState::new(
-                FlowTableDelegate::new(flows, selected_flow, start_timestamp),
+                FlowTableDelegate::new(
+                    flows,
+                    selected_flow,
+                    start_timestamp,
+                    prefer_names,
+                    name_resolutions,
+                ),
                 window,
                 cx,
             )
@@ -224,9 +313,9 @@ impl TableDelegate for FlowTableDelegate {
                 }
             }
             "protocol" => format!("{:?}", flow.protocol),
-            "source" => flow.source.to_string(),
+            "source" => self.display_endpoint(&flow.source),
             "source_port" => flow.source.port.to_string(),
-            "destination" => flow.destination.to_string(),
+            "destination" => self.display_endpoint(&flow.destination),
             "destination_port" => flow.destination.port.to_string(),
             "packets" => flow.packets.len().to_string(),
             "bytes" => flow.total_bytes().to_string(),

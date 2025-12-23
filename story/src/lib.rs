@@ -3,7 +3,7 @@ use wirecrab::flow::{Endpoint, Flow, FlowKey, IPAddress, Packet, Protocol};
 use wirecrab::gpui::*;
 use wirecrab::gpui_component::{ActiveTheme, StyledExt};
 use wirecrab::gui::components::{
-    FlowTable, PacketBytesView, PacketTable, ProtocolCategory, SearchBar, Toolbar,
+    FlowTable, PacketBytesView, PacketTable, ProtocolCategory, SearchBar, SettingsMenu, Toolbar,
     histogram_from_flows, render_histogram,
 };
 
@@ -16,6 +16,7 @@ enum Page {
     SearchBar,
     Toolbar,
     Histogram,
+    SettingsMenu,
 }
 
 impl Page {
@@ -28,6 +29,7 @@ impl Page {
             Page::SearchBar => "Search Bar",
             Page::Toolbar => "Toolbar",
             Page::Histogram => "Histogram",
+            Page::SettingsMenu => "Settings Menu",
         }
     }
 
@@ -40,6 +42,7 @@ impl Page {
             Page::SearchBar,
             Page::Toolbar,
             Page::Histogram,
+            Page::SettingsMenu,
         ]
     }
 }
@@ -53,6 +56,7 @@ pub struct StoryView {
     packet_bytes_data: Vec<u8>,
     flows: HashMap<FlowKey, Flow>,
     histogram_collapsed: bool,
+    prefer_names: bool,
 }
 
 impl StoryView {
@@ -63,10 +67,25 @@ impl StoryView {
         let flows = generate_mock_flows();
         let flow_vec: Vec<(FlowKey, Flow)> = flows.iter().map(|(k, v)| (*k, v.clone())).collect();
 
-        let flow_table = FlowTable::create(window, cx, flow_vec.clone(), None, None);
+        let flow_table = FlowTable::create(
+            window,
+            cx,
+            flow_vec.clone(),
+            None,
+            None,
+            false,
+            HashMap::new(),
+        );
 
         let mock_flow = flow_vec.first().map(|(_, f)| f.clone()).unwrap_or_default();
-        let packet_table = PacketTable::create(window, cx, &mock_flow, None);
+        let packet_table = PacketTable::create(
+            window,
+            cx,
+            &mock_flow,
+            None,
+            false,
+            HashMap::new(),
+        );
 
         let packet_bytes_data = (0..512).map(|i| (i % 256) as u8).collect::<Vec<_>>();
         let packet_bytes_list = PacketBytesView::create_list_state(&packet_bytes_data);
@@ -80,6 +99,7 @@ impl StoryView {
             packet_bytes_data,
             flows,
             histogram_collapsed: false,
+            prefer_names: true,
         }
     }
 
@@ -155,6 +175,28 @@ impl StoryView {
                 div().child(render_histogram(
                     buckets, collapsed, on_toggle, on_legend, cx,
                 ))
+            }
+            Page::SettingsMenu => {
+                let toggle_names =
+                    cx.listener(|this: &mut StoryView, _event: &(), _window, _cx| {
+                        this.prefer_names = !this.prefer_names;
+                    });
+
+                div()
+                    .p_4()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(SettingsMenu::new(self.prefer_names, toggle_names))
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().colors.muted_foreground)
+                            .child(format!(
+                                "Resolve names is {}",
+                                if self.prefer_names { "on" } else { "off" }
+                            )),
+                    )
             }
         };
 

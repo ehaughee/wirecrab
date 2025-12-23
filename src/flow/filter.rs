@@ -1,17 +1,27 @@
 use super::{Endpoint, Flow, IPAddress, Protocol};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
-pub struct FlowFilter {
+pub struct FlowFilter<'a> {
     needle: String,
     timestamp_origin: Option<f64>,
+    prefer_names: bool,
+    name_resolutions: Option<&'a HashMap<IPAddress, Vec<String>>>,
 }
 
-impl FlowFilter {
-    pub fn new(query: impl AsRef<str>, timestamp_origin: Option<f64>) -> Self {
+impl<'a> FlowFilter<'a> {
+    pub fn new(
+        query: impl AsRef<str>,
+        timestamp_origin: Option<f64>,
+        prefer_names: bool,
+        name_resolutions: Option<&'a HashMap<IPAddress, Vec<String>>>,
+    ) -> Self {
         let needle = query.as_ref().trim().to_lowercase();
         Self {
             needle,
             timestamp_origin,
+            prefer_names,
+            name_resolutions,
         }
     }
 
@@ -25,12 +35,14 @@ impl FlowFilter {
             return true;
         }
 
-        let src_ip = FlowFormatter::ip_address(&flow.source.ip);
+        let src_ip =
+            FlowFormatter::ip_address(&flow.source.ip, self.prefer_names, self.name_resolutions);
         if self.matches(&src_ip) {
             return true;
         }
 
-        let src_endpoint = FlowFormatter::endpoint(&flow.source);
+        let src_endpoint =
+            FlowFormatter::endpoint(&flow.source, self.prefer_names, self.name_resolutions);
         if self.matches(&src_endpoint) {
             return true;
         }
@@ -39,12 +51,17 @@ impl FlowFilter {
             return true;
         }
 
-        let dst_ip = FlowFormatter::ip_address(&flow.destination.ip);
+        let dst_ip = FlowFormatter::ip_address(
+            &flow.destination.ip,
+            self.prefer_names,
+            self.name_resolutions,
+        );
         if self.matches(&dst_ip) {
             return true;
         }
 
-        let dst_endpoint = FlowFormatter::endpoint(&flow.destination);
+        let dst_endpoint =
+            FlowFormatter::endpoint(&flow.destination, self.prefer_names, self.name_resolutions);
         if self.matches(&dst_endpoint) {
             return true;
         }
@@ -78,12 +95,28 @@ impl FlowFormatter {
         format!("{:.6}", relative)
     }
 
-    pub fn ip_address(ip: &IPAddress) -> String {
+    pub fn ip_address(
+        ip: &IPAddress,
+        prefer_names: bool,
+        name_resolutions: Option<&HashMap<IPAddress, Vec<String>>>,
+    ) -> String {
+        if prefer_names
+            && let Some(first) = name_resolutions
+                .and_then(|m| m.get(ip))
+                .and_then(|names| names.first())
+        {
+            return first.clone();
+        }
         ip.to_string()
     }
 
-    pub fn endpoint(endpoint: &Endpoint) -> String {
-        endpoint.to_string()
+    pub fn endpoint(
+        endpoint: &Endpoint,
+        prefer_names: bool,
+        name_resolutions: Option<&HashMap<IPAddress, Vec<String>>>,
+    ) -> String {
+        let ip = Self::ip_address(&endpoint.ip, prefer_names, name_resolutions);
+        format!("{}:{}", ip, endpoint.port)
     }
 
     pub fn protocol(protocol: &Protocol) -> String {

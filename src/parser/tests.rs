@@ -155,7 +155,7 @@ fn parse_pcap_handles_randpkt_mix() {
     let path = std::path::Path::new("testdata/randpkt_mixed.pcapng");
     assert!(path.exists(), "expected randpkt_mixed fixture to exist");
 
-    let (flows, start_ts) = parse_pcap(path, |_p| {}).expect("parse randpkt_mixed");
+    let (flows, start_ts, _names) = parse_pcap(path, |_p| {}).expect("parse randpkt_mixed");
 
     assert!(!flows.is_empty(), "expected flows from randpkt capture");
     assert!(start_ts.is_some(), "expected start timestamp");
@@ -169,7 +169,7 @@ fn parse_pcap_skips_malformed_randpkt_tcp() {
     let result = parse_pcap(path, |_p| {});
     assert!(result.is_ok(), "parser should not crash on malformed randpkt tcp");
 
-    let (flows, _ts) = result.unwrap();
+    let (flows, _ts, _names) = result.unwrap();
     // Malformed packets may all be skipped; just assert we handled gracefully.
     let _ = flows.len();
 }

@@ -1,6 +1,6 @@
 use super::decoder::decode_headers;
 use super::{dns, packets, state};
-use crate::flow::{Flow, FlowKey};
+use crate::flow::{Flow, FlowKey, IPAddress};
 use crate::layers::tls::TlsParser;
 use anyhow::{Context, Result};
 use pcap_parser::pcapng::EnhancedPacketBlock;
@@ -17,10 +17,13 @@ struct InterfaceDescription {
     ts_offset: i64,
 }
 
-pub fn parse_pcap<F>(
-    file_path: &std::path::Path,
-    on_progress: F,
-) -> Result<(HashMap<FlowKey, Flow>, Option<f64>)>
+type ParseResult = (
+    HashMap<FlowKey, Flow>,
+    Option<f64>,
+    HashMap<IPAddress, Vec<String>>,
+);
+
+pub fn parse_pcap<F>(file_path: &std::path::Path, on_progress: F) -> Result<ParseResult>
 where
     F: Fn(f32),
 {
@@ -130,7 +133,7 @@ where
         elapsed_ms = elapsed.as_millis(),
         "Completed PCAP parse"
     );
-    Ok((state.flows, state.first_packet_ts))
+    Ok((state.flows, state.first_packet_ts, state.name_resolutions))
 }
 
 fn calculate_ts_unit(resolution: u8) -> u64 {

@@ -2,7 +2,7 @@ use crate::flow::filter::FlowFilter;
 use crate::flow::*;
 use crate::gui::assets::Assets;
 use crate::gui::components::{
-    FlowTable, PacketBytesView, PacketTable, ProtocolCategory, SearchBar, Toolbar,
+    FlowTable, PacketBytesView, PacketTable, ProtocolCategory, SearchBar, SettingsMenu, Toolbar,
     histogram_from_flows, render_histogram,
 };
 use crate::gui::fonts;
@@ -10,12 +10,11 @@ use crate::gui::layout::{BottomSplit, Layout};
 use crate::loader::{FlowLoadController, FlowLoadStatus};
 use gpui::AsyncApp;
 use gpui::*;
-use gpui_component::button::Button;
 use gpui_component::input::InputEvent;
 use gpui_component::progress::Progress;
 use gpui_component::resizable::ResizableState;
 use gpui_component::table::TableEvent;
-use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Root, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Root, StyledExt};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::{debug, info, trace, warn};
@@ -24,6 +23,7 @@ struct FlowStore {
     flows: HashMap<FlowKey, Flow>,
     start_timestamp: Option<f64>,
     selected_flow: Option<FlowKey>,
+    name_resolutions: HashMap<IPAddress, Vec<String>>,
 }
 
 impl FlowStore {
@@ -32,10 +32,16 @@ impl FlowStore {
             flows: HashMap::new(),
             start_timestamp: None,
             selected_flow: None,
+            name_resolutions: HashMap::new(),
         }
     }
 
-    fn ingest(&mut self, flows: HashMap<FlowKey, Flow>, start_timestamp: Option<f64>) {
+    fn ingest(
+        &mut self,
+        flows: HashMap<FlowKey, Flow>,
+        start_timestamp: Option<f64>,
+        name_resolutions: HashMap<IPAddress, Vec<String>>,
+    ) {
         let min_ts = flows
             .values()
             .map(|flow| flow.timestamp)
@@ -49,11 +55,17 @@ impl FlowStore {
         }
 
         self.flows = flows;
+        self.name_resolutions = name_resolutions;
         info!(flow_count = self.flows.len(), "Flow store updated");
     }
 
-    fn filtered_flows(&self, search_text: &str) -> Vec<(FlowKey, Flow)> {
-        let filter = FlowFilter::new(search_text, self.start_timestamp);
+    fn filtered_flows(&self, search_text: &str, prefer_names: bool) -> Vec<(FlowKey, Flow)> {
+        let filter = FlowFilter::new(
+            search_text,
+            self.start_timestamp,
+            prefer_names,
+            Some(&self.name_resolutions),
+        );
         self.flows
             .iter()
             .filter(|(_, flow)| filter.matches_flow(flow))
@@ -80,6 +92,10 @@ impl FlowStore {
 
     fn start_timestamp(&self) -> Option<f64> {
         self.start_timestamp
+    }
+
+    fn name_resolutions(&self) -> &HashMap<IPAddress, Vec<String>> {
+        &self.name_resolutions
     }
 
     fn total_flows(&self) -> usize {
@@ -134,12 +150,13 @@ struct FlowView {
     last_flow_keys: Vec<FlowKey>,
     last_selected: Option<FlowKey>,
     last_start_timestamp: Option<f64>,
+    last_prefer_names: bool,
 }
 
 impl FlowView {
     fn new(window: &mut Window, cx: &mut Context<WirecrabApp>) -> Self {
         let search_bar = SearchBar::create(window, cx);
-        let table = FlowTable::create(window, cx, Vec::new(), None, None);
+        let table = FlowTable::create(window, cx, Vec::new(), None, None, false, HashMap::new());
 
         cx.subscribe_in(
             search_bar.entity(),
@@ -178,6 +195,7 @@ impl FlowView {
             last_flow_keys: Vec::new(),
             last_selected: None,
             last_start_timestamp: None,
+            last_prefer_names: true,
         }
     }
 
@@ -198,12 +216,16 @@ impl FlowView {
         flows: Vec<(FlowKey, Flow)>,
         selected: Option<FlowKey>,
         start_timestamp: Option<f64>,
+        name_resolutions: &HashMap<IPAddress, Vec<String>>,
+        prefer_names: bool,
         cx: &mut App,
     ) {
         let new_keys: Vec<FlowKey> = flows.iter().map(|(key, _)| *key).collect();
+        let prefer_changed = self.last_prefer_names != prefer_names;
         if self.last_flow_keys == new_keys
             && self.last_selected == selected
             && self.last_start_timestamp == start_timestamp
+            && !prefer_changed
         {
             trace!("Flow table unchanged; skipping refresh");
             return;
@@ -218,11 +240,14 @@ impl FlowView {
             delegate.set_start_timestamp(start_timestamp);
             delegate.set_flows(flows);
             delegate.selected_flow = selected;
+            delegate.set_name_resolutions(name_resolutions.clone());
+            delegate.set_prefer_names(prefer_names);
             table.refresh(cx);
         });
         self.last_flow_keys = new_keys;
         self.last_selected = selected;
         self.last_start_timestamp = start_timestamp;
+        self.last_prefer_names = prefer_names;
     }
 
     fn describe_table_event(event: &TableEvent) -> String {
@@ -246,6 +271,7 @@ struct DetailPane {
     last_flow_key: Option<FlowKey>,
     last_packet_count: usize,
     last_start_timestamp: Option<f64>,
+    last_prefer_names: bool,
 }
 
 impl DetailPane {
@@ -258,6 +284,7 @@ impl DetailPane {
             last_flow_key: None,
             last_packet_count: 0,
             last_start_timestamp: None,
+            last_prefer_names: true,
         }
     }
 
@@ -267,18 +294,27 @@ impl DetailPane {
         cx: &mut Context<WirecrabApp>,
         flow: &Flow,
         start_timestamp: Option<f64>,
+        prefer_names: bool,
+        name_resolutions: &HashMap<IPAddress, Vec<String>>,
     ) {
         let flow_key = FlowKey::from_endpoints(flow.source, flow.destination, flow.protocol);
         let packet_count = flow.packets.len();
         let needs_update = self.packet_table.is_none()
             || self.last_flow_key != Some(flow_key)
             || self.last_packet_count != packet_count
-            || self.last_start_timestamp != start_timestamp;
+            || self.last_start_timestamp != start_timestamp
+            || self.last_prefer_names != prefer_names;
 
         if let Some(table) = &mut self.packet_table {
             if needs_update {
                 trace!(packet_count, "Updating packet table in detail pane");
-                table.update(flow, start_timestamp, cx);
+                table.update(
+                    flow,
+                    start_timestamp,
+                    prefer_names,
+                    name_resolutions.clone(),
+                    cx,
+                );
             } else {
                 trace!("Packet table unchanged; skipping refresh");
             }
@@ -287,7 +323,14 @@ impl DetailPane {
                 packet_count = flow.packets.len(),
                 "Creating packet table for detail pane"
             );
-            let packet_table = PacketTable::create(window, cx, flow, start_timestamp);
+            let packet_table = PacketTable::create(
+                window,
+                cx,
+                flow,
+                start_timestamp,
+                prefer_names,
+                name_resolutions.clone(),
+            );
             Self::subscribe_to_selection(&packet_table, window, cx);
             self.packet_table = Some(packet_table);
             self.split_state = cx.new(|_| ResizableState::default());
@@ -297,6 +340,7 @@ impl DetailPane {
         self.last_flow_key = Some(flow_key);
         self.last_packet_count = packet_count;
         self.last_start_timestamp = start_timestamp;
+        self.last_prefer_names = prefer_names;
     }
 
     fn subscribe_to_selection(
@@ -371,6 +415,7 @@ pub struct WirecrabApp {
     detail_pane: DetailPane,
     main_split_state: Entity<ResizableState>,
     histogram_collapsed: bool,
+    prefer_names: bool,
 }
 
 impl WirecrabApp {
@@ -410,6 +455,7 @@ impl WirecrabApp {
             detail_pane,
             main_split_state,
             histogram_collapsed: false,
+            prefer_names: true,
         }
     }
 
@@ -422,9 +468,10 @@ impl WirecrabApp {
             FlowLoadStatus::Ready {
                 flows,
                 start_timestamp,
+                name_resolutions,
             } => {
                 info!(flow_count = flows.len(), "Loader ready with parsed flows");
-                self.flows.ingest(flows, start_timestamp);
+                self.flows.ingest(flows, start_timestamp, name_resolutions);
                 cx.notify();
                 false
             }
@@ -551,21 +598,35 @@ impl Render for WirecrabApp {
         let loader_status = self.render_loader_status_bar(cx);
 
         let query = self.flow_view.query(cx);
-        let flows_vec = self.flows.filtered_flows(&query);
+        let flows_vec = self.flows.filtered_flows(&query, self.prefer_names);
         let selected_flow = self.flows.selected_flow();
         let start_timestamp = self.flows.start_timestamp();
 
         // Compute histogram before updating table (which consumes flows_vec)
         let histogram_buckets = histogram_from_flows(&flows_vec, start_timestamp);
 
-        self.flow_view
-            .update_table(flows_vec, selected_flow, start_timestamp, cx);
+        let name_resolutions = self.flows.name_resolutions().clone();
+
+        self.flow_view.update_table(
+            flows_vec,
+            selected_flow,
+            start_timestamp,
+            &name_resolutions,
+            self.prefer_names,
+            cx,
+        );
 
         let current_flow = self.flows.current_flow();
 
         if let Some(ref flow) = current_flow {
-            self.detail_pane
-                .ensure_table(window, cx, flow, start_timestamp);
+            self.detail_pane.ensure_table(
+                window,
+                cx,
+                flow,
+                start_timestamp,
+                self.prefer_names,
+                &name_resolutions,
+            );
         } else if self.detail_pane.has_content() {
             self.detail_pane.close(cx);
         }
@@ -591,24 +652,18 @@ impl Render for WirecrabApp {
                         ),
                 );
 
-            let clear_selection =
+            let toggle_resolve_names =
                 cx.listener(|app: &mut WirecrabApp, &_event: &(), _window, cx| {
-                    app.close_details(cx);
+                    app.prefer_names = !app.prefer_names;
                     cx.notify();
                 });
 
-            let clear_button = Button::new("clear_selection_button")
-                .icon(Icon::new(IconName::CircleX))
-                .label("Clear selection")
-                .disabled(selected_flow.is_none())
-                .on_click(move |_event, window, cx| {
-                    clear_selection(&(), window, cx);
-                });
+            let settings_menu = SettingsMenu::new(self.prefer_names, toggle_resolve_names);
 
             Toolbar::new()
                 .left(file_info)
                 .center(self.flow_view.search_bar())
-                .right(clear_button)
+                .right(settings_menu)
         };
 
         // Histogram

@@ -1,5 +1,5 @@
+use crate::flow::{Flow, FlowKey, IPAddress};
 use crate::parser::parse_pcap;
-use crate::flow::{Flow, FlowKey};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
@@ -11,7 +11,7 @@ mod tests;
 
 pub enum LoadStatus {
     Progress(f32),
-    Loaded(HashMap<FlowKey, Flow>, Option<f64>),
+    Loaded(HashMap<FlowKey, Flow>, Option<f64>, HashMap<IPAddress, Vec<String>>),
     Error(String),
 }
 
@@ -31,9 +31,9 @@ impl Loader {
             });
 
             match result {
-                Ok((flows, start_ts)) => {
+                Ok((flows, start_ts, name_resolutions)) => {
                     info!(path = ?path_clone, flows = flows.len(), "PCAP parsed; sending results");
-                    let _ = tx.send(LoadStatus::Loaded(flows, start_ts));
+                    let _ = tx.send(LoadStatus::Loaded(flows, start_ts, name_resolutions));
                 }
                 Err(e) => {
                     error!(path = ?path_clone, error = ?e, "Failed to parse PCAP");
@@ -57,6 +57,7 @@ pub enum FlowLoadStatus {
     Ready {
         flows: HashMap<FlowKey, Flow>,
         start_timestamp: Option<f64>,
+        name_resolutions: HashMap<IPAddress, Vec<String>>,
     },
     Error(String),
     Idle,
@@ -91,12 +92,13 @@ impl FlowLoadController {
                     trace!(progress = p, "Loader received progress update");
                     status = FlowLoadStatus::Loading { progress: p };
                 }
-                LoadStatus::Loaded(flows, start_timestamp) => {
+                LoadStatus::Loaded(flows, start_timestamp, name_resolutions) => {
                     self.loader = None;
                     info!(flows = flows.len(), "Loader completed successfully");
                     return FlowLoadStatus::Ready {
                         flows,
                         start_timestamp,
+                        name_resolutions,
                     };
                 }
                 LoadStatus::Error(error) => {
