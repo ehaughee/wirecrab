@@ -178,11 +178,15 @@ impl StoryView {
                         this.prefer_names = !this.prefer_names;
                     });
 
-                let on_theme_change =
+                let on_theme_change_listener =
                     cx.listener(|this: &mut StoryView, mode: &ThemeMode, _window, cx| {
                         this.theme_mode = *mode;
                         apply_theme(*mode, cx);
                     });
+
+                let on_theme_change = move |mode: ThemeMode, window: &mut Window, cx: &mut App| {
+                    on_theme_change_listener(&mode, window, cx);
+                };
 
                 div()
                     .p_4()
