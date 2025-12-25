@@ -17,3 +17,4 @@ When generating code for the Wirecrab project, please adhere to the following gu
 10. When working on UI components, consider both the TUI and GUI aspects of the application to ensure a consistent user experience across interfaces. Ask if the user wants changes to both or just one. Often we will defer changes to the TUI until later or indefinitely if they are not a good fit.
 11. When dealing with network protocols or data structures, ensure that any parsing or serialization logic adheres to relevant standards and best practices.
 12. After every change, check the results with `cargo check --features ui,tui` to ensure that both UI and TUI features are correctly handled.
+13. After every change, check the results with `cargo clippy --features ui,tui` to ensure that the code adheres to Rust's best practices and style guidelines.
