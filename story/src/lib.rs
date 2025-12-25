@@ -6,6 +6,7 @@ use wirecrab::gui::components::{
     FlowTable, PacketBytesView, PacketTable, ProtocolCategory, SearchBar, SettingsMenu, Toolbar,
     histogram_from_flows, render_histogram,
 };
+use wirecrab::gui::theme::{ThemeMode, apply_theme};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
@@ -57,6 +58,7 @@ pub struct StoryView {
     flows: HashMap<FlowKey, Flow>,
     histogram_collapsed: bool,
     prefer_names: bool,
+    theme_mode: ThemeMode,
 }
 
 impl StoryView {
@@ -78,14 +80,7 @@ impl StoryView {
         );
 
         let mock_flow = flow_vec.first().map(|(_, f)| f.clone()).unwrap_or_default();
-        let packet_table = PacketTable::create(
-            window,
-            cx,
-            &mock_flow,
-            None,
-            false,
-            HashMap::new(),
-        );
+        let packet_table = PacketTable::create(window, cx, &mock_flow, None, false, HashMap::new());
 
         let packet_bytes_data = (0..512).map(|i| (i % 256) as u8).collect::<Vec<_>>();
         let packet_bytes_list = PacketBytesView::create_list_state(&packet_bytes_data);
@@ -100,6 +95,7 @@ impl StoryView {
             flows,
             histogram_collapsed: false,
             prefer_names: true,
+            theme_mode: ThemeMode::Dark,
         }
     }
 
@@ -182,12 +178,23 @@ impl StoryView {
                         this.prefer_names = !this.prefer_names;
                     });
 
+                let on_theme_change =
+                    cx.listener(|this: &mut StoryView, mode: &ThemeMode, _window, cx| {
+                        this.theme_mode = *mode;
+                        apply_theme(*mode, cx);
+                    });
+
                 div()
                     .p_4()
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .child(SettingsMenu::new(self.prefer_names, toggle_names))
+                    .child(SettingsMenu::new(
+                        self.prefer_names,
+                        toggle_names,
+                        self.theme_mode,
+                        on_theme_change,
+                    ))
                     .child(
                         div()
                             .text_sm()
@@ -195,6 +202,18 @@ impl StoryView {
                             .child(format!(
                                 "Resolve names is {}",
                                 if self.prefer_names { "on" } else { "off" }
+                            )),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().colors.muted_foreground)
+                            .child(format!(
+                                "Theme: {}",
+                                match self.theme_mode {
+                                    ThemeMode::Dark => "Dark",
+                                    ThemeMode::Light => "Light",
+                                }
                             )),
                     )
             }

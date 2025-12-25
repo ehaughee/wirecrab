@@ -7,6 +7,7 @@ use crate::gui::components::{
 };
 use crate::gui::fonts;
 use crate::gui::layout::{BottomSplit, Layout};
+use crate::gui::theme::{ThemeMode, apply_theme};
 use crate::loader::{FlowLoadController, FlowLoadStatus};
 use gpui::AsyncApp;
 use gpui::*;
@@ -416,6 +417,7 @@ pub struct WirecrabApp {
     main_split_state: Entity<ResizableState>,
     histogram_collapsed: bool,
     prefer_names: bool,
+    theme_mode: ThemeMode,
 }
 
 impl WirecrabApp {
@@ -456,6 +458,7 @@ impl WirecrabApp {
             main_split_state,
             histogram_collapsed: false,
             prefer_names: true,
+            theme_mode: ThemeMode::Dark,
         }
     }
 
@@ -658,7 +661,23 @@ impl Render for WirecrabApp {
                     cx.notify();
                 });
 
-            let settings_menu = SettingsMenu::new(self.prefer_names, toggle_resolve_names);
+            let on_theme_change_listener =
+                cx.listener(|app: &mut WirecrabApp, mode: &ThemeMode, _window, cx| {
+                    app.theme_mode = *mode;
+                    apply_theme(*mode, cx);
+                    cx.notify();
+                });
+
+            let on_theme_change = move |mode: ThemeMode, window: &mut Window, cx: &mut App| {
+                on_theme_change_listener(&mode, window, cx);
+            };
+
+            let settings_menu = SettingsMenu::new(
+                self.prefer_names,
+                toggle_resolve_names,
+                self.theme_mode,
+                on_theme_change,
+            );
 
             Toolbar::new()
                 .left(file_info)
