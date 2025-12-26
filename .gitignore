@@ -3,5 +3,6 @@ testdata/*
 wirecrab.log
 .idea/
 .jj/
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .cargo/*
