@@ -1,6 +1,6 @@
 use crate::gui::theme::ThemeMode;
 use gpui::*;
-use gpui_component::button::Button;
+use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::menu::{DropdownMenu, PopupMenu, PopupMenuItem};
 use gpui_component::{Icon, IconName};
 use std::rc::Rc;
@@ -42,9 +42,9 @@ impl RenderOnce for SettingsMenu {
 
         Button::new("settings_menu_button")
             .icon(Icon::new(IconName::Settings))
-            .label("Settings")
-            .dropdown_caret(true)
-            .dropdown_menu_with_anchor(Corner::BottomLeft, move |menu: PopupMenu, _window, _cx| {
+            .ghost()
+            .compact()
+            .dropdown_menu_with_anchor(Corner::TopRight, move |menu: PopupMenu, _window, _cx| {
                 menu.label("Display")
                     .item(
                         PopupMenuItem::new("Dark Mode")
