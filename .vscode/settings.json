@@ -1,4 +1,11 @@
 {
-  "rust-analyzer.linkedProjects": ["Cargo.toml", "story/Cargo.toml"],
-  "rust-analyzer.cargo.allFeatures": true
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+  },
+  "rust-analyzer.linkedProjects": [
+    "Cargo.toml",
+    "story/Cargo.toml"
+  ],
+  "rust-analyzer.cargo.allFeatures": true,
+  "editor.formatOnSave": true
 }
