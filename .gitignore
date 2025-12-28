@@ -1,5 +1,5 @@
 /target
-testdata/*
+private-test-data
 wirecrab.log
 .idea/
 .jj/
