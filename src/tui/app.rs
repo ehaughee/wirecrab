@@ -50,6 +50,7 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    let file_path = path.clone();
     let mut loader = FlowLoadController::new(path);
     let mut loading_progress = Some(0.0);
     let mut error_message: Option<String> = None;
@@ -75,9 +76,10 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
                 info!("TUI loader ready");
             }
             FlowLoadStatus::Error(err) => {
-                error_message = Some(err);
+                let summary = err.summary(&file_path);
+                error_message = Some(format!("{} ({})", summary, err.message()));
                 loading_progress = None;
-                warn!("TUI loader failed");
+                warn!(error = %err.message(), kind = ?err.kind(), "TUI loader failed");
             }
             FlowLoadStatus::Idle => {}
         }
@@ -177,9 +179,9 @@ pub fn run_tui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             .checked_sub(last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_secs(0));
 
-        if crossterm::event::poll(timeout)? &&
-            let Event::Key(key) = event::read()? &&
-            key.kind == KeyEventKind::Press 
+        if crossterm::event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
         {
             if loading_progress.is_some() || error_message.is_some() {
                 if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {

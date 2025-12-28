@@ -27,7 +27,8 @@ pub fn parse_pcap<F>(file_path: &std::path::Path, on_progress: F) -> Result<Pars
 where
     F: Fn(f32),
 {
-    let file = File::open(file_path).context("Failed to open file")?;
+    let file = File::open(file_path)
+        .with_context(|| format!("Failed to open PCAP file {}", file_path.display()))?;
     let file_size = file.metadata()?.len();
     info!(path = ?file_path, size_bytes = file_size, "Starting PCAP parse");
     let mut reader = PcapNGReader::new(65536, file)

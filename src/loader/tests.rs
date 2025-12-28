@@ -15,9 +15,9 @@ fn controller_reports_error_for_invalid_pcap() {
     let mut saw_error = false;
     for _ in 0..100 {
         match controller.poll() {
-            FlowLoadStatus::Error(msg) => {
+            FlowLoadStatus::Error(err) => {
                 saw_error = true;
-                assert!(msg.contains("Failed") || msg.contains("error"));
+                assert!(!err.message().is_empty());
                 break;
             }
             FlowLoadStatus::Loading { .. } => sleep(Duration::from_millis(10)),
@@ -40,7 +40,10 @@ fn controller_reports_error_for_invalid_pcap() {
 #[test]
 fn controller_loads_valid_pcap() {
     let path = std::path::PathBuf::from("testdata/valid_tcp_udp.pcapng");
-    assert!(path.exists(), "expected testdata/valid_tcp_udp.pcapng to exist");
+    assert!(
+        path.exists(),
+        "expected testdata/valid_tcp_udp.pcapng to exist"
+    );
 
     let mut controller = FlowLoadController::new(path);
 
@@ -49,7 +52,11 @@ fn controller_loads_valid_pcap() {
     let mut saw_timestamp = false;
     for _ in 0..200 {
         match controller.poll() {
-            FlowLoadStatus::Ready { flows, start_timestamp, name_resolutions } => {
+            FlowLoadStatus::Ready {
+                flows,
+                start_timestamp,
+                name_resolutions,
+            } => {
                 got_ready = true;
                 flows_seen = flows.len();
                 saw_timestamp = start_timestamp.is_some();
@@ -57,20 +64,26 @@ fn controller_loads_valid_pcap() {
                 break;
             }
             FlowLoadStatus::Loading { .. } => sleep(Duration::from_millis(10)),
-            FlowLoadStatus::Error(msg) => panic!("unexpected error: {msg}"),
+            FlowLoadStatus::Error(err) => panic!("unexpected error: {err}", err = err.message()),
             FlowLoadStatus::Idle => {}
         }
     }
 
     assert!(got_ready, "loader did not finish in time");
-    assert!(flows_seen > 0, "expected at least one flow from tcp/udp capture");
+    assert!(
+        flows_seen > 0,
+        "expected at least one flow from tcp/udp capture"
+    );
     assert!(saw_timestamp, "expected start timestamp from capture");
 }
 
 #[test]
 fn controller_reports_progress_before_completion() {
     let path = std::path::PathBuf::from("testdata/randpkt_mixed.pcapng");
-    assert!(path.exists(), "expected testdata/randpkt_mixed.pcapng to exist");
+    assert!(
+        path.exists(),
+        "expected testdata/randpkt_mixed.pcapng to exist"
+    );
 
     let mut controller = FlowLoadController::new(path);
 
@@ -88,7 +101,7 @@ fn controller_reports_progress_before_completion() {
                 finished = true;
                 break;
             }
-            FlowLoadStatus::Error(msg) => panic!("unexpected error: {msg}"),
+            FlowLoadStatus::Error(err) => panic!("unexpected error: {err}", err = err.message()),
             FlowLoadStatus::Idle => {}
         }
         sleep(Duration::from_millis(5));

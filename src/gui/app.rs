@@ -8,7 +8,7 @@ use crate::gui::components::{
 use crate::gui::fonts;
 use crate::gui::layout::{BottomSplit, Layout};
 use crate::gui::theme::{ThemeMode, apply_theme};
-use crate::loader::{FlowLoadController, FlowLoadStatus};
+use crate::loader::{FlowLoadController, FlowLoadStatus, LoadError};
 use gpui::AsyncApp;
 use gpui::*;
 use gpui_component::input::InputEvent;
@@ -107,7 +107,7 @@ impl FlowStore {
 struct LoaderState {
     controller: FlowLoadController,
     progress: Option<f32>,
-    error: Option<String>,
+    error: Option<LoadError>,
 }
 
 impl LoaderState {
@@ -140,7 +140,7 @@ impl LoaderState {
         self.progress
     }
 
-    fn error(&self) -> Option<&String> {
+    fn error(&self) -> Option<&LoadError> {
         self.error.as_ref()
     }
 }
@@ -562,7 +562,7 @@ impl WirecrabApp {
         }
 
         if let Some(error) = self.loader.error() {
-            let message = format!("Wirecrab could not open {}.", self.path);
+            let message = error.summary(&self.path);
 
             let status = div()
                 .id("loader_status_error")
@@ -585,7 +585,7 @@ impl WirecrabApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().colors.muted_foreground)
-                                .child(error.clone()),
+                                .child(error.message().to_string()),
                         ),
                 );
 
