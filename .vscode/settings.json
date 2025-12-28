@@ -7,5 +7,10 @@
     "story/Cargo.toml"
   ],
   "rust-analyzer.cargo.allFeatures": true,
-  "editor.formatOnSave": true
+  "rust-analyzer.check.command": "clippy",
+  "editor.formatOnSave": true,
+  "chat.tools.urls.autoApprove": {
+    "https://docs.rs": true,
+    "https://longbridge.github.io": true
+  }
 }
