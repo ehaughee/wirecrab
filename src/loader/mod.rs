@@ -134,10 +134,25 @@ pub struct FlowLoadController {
 
 impl FlowLoadController {
     pub fn new(path: PathBuf) -> Self {
+        let mut controller = Self {
+            loader: None,
+            last_progress: 0.0,
+        };
+        controller.start(path);
+        controller
+    }
+
+    /// Create an idle controller that can be started later.
+    pub fn idle() -> Self {
         Self {
-            loader: Some(Loader::new(path)),
+            loader: None,
             last_progress: 0.0,
         }
+    }
+
+    pub fn start(&mut self, path: PathBuf) {
+        self.last_progress = 0.0;
+        self.loader = Some(Loader::new(path));
     }
 
     pub fn poll(&mut self) -> FlowLoadStatus {

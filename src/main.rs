@@ -11,8 +11,8 @@ use wirecrab::logging;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Path to the pcap file to parse
-    file_path: PathBuf,
+    /// Optional path to the pcap file to parse
+    file_path: Option<PathBuf>,
 
     /// Launch the Graphical User Interface
     #[arg(long)]
@@ -69,12 +69,7 @@ fn main() -> Result<()> {
         log_level = ?args.log_level,
         "Logger initialized"
     );
-    info!(
-        file = ?args.file_path,
-        ui = args.ui,
-        tui = args.tui,
-        "Starting Wirecrab"
-    );
+    info!(ui = args.ui, tui = args.tui, "Starting Wirecrab");
 
     if args.ui {
         #[cfg(feature = "ui")]
@@ -88,7 +83,12 @@ fn main() -> Result<()> {
     } else if args.tui {
         #[cfg(feature = "tui")]
         {
-            tui::run_tui(args.file_path).map_err(|e| anyhow::anyhow!("{}", e))?;
+            let Some(path) = args.file_path else {
+                eprintln!("Error: TUI mode requires a capture file path");
+                anyhow::bail!("TUI mode requires a capture file path");
+            };
+
+            tui::run_tui(path).map_err(|e| anyhow::anyhow!("{}", e))?;
         }
         #[cfg(not(feature = "tui"))]
         {

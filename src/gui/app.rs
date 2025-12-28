@@ -12,10 +12,12 @@ use crate::loader::{FlowLoadController, FlowLoadStatus, LoadError};
 use gpui::AsyncApp;
 use gpui::*;
 use gpui_component::input::InputEvent;
+use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::progress::Progress;
 use gpui_component::resizable::ResizableState;
 use gpui_component::table::TableEvent;
 use gpui_component::{ActiveTheme, Icon, IconName, Root, StyledExt};
+use rfd::FileDialog;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::{debug, info, trace, warn};
@@ -111,12 +113,23 @@ struct LoaderState {
 }
 
 impl LoaderState {
-    fn new(path: PathBuf) -> Self {
+    fn with_optional_path(path: Option<PathBuf>) -> Self {
+        let controller = match path.as_ref() {
+            Some(p) => FlowLoadController::new(p.clone()),
+            None => FlowLoadController::idle(),
+        };
+
         Self {
-            controller: FlowLoadController::new(path),
-            progress: Some(0.0),
+            controller,
+            progress: path.as_ref().map(|_| 0.0),
             error: None,
         }
+    }
+
+    fn start(&mut self, path: PathBuf) {
+        self.controller.start(path);
+        self.progress = Some(0.0);
+        self.error = None;
     }
 
     fn poll(&mut self) -> FlowLoadStatus {
@@ -408,8 +421,8 @@ impl DetailPane {
     }
 }
 
-pub struct WirecrabApp {
-    path: String,
+struct WirecrabApp {
+    path: Option<String>,
     loader: LoaderState,
     flows: FlowStore,
     flow_view: FlowView,
@@ -421,8 +434,8 @@ pub struct WirecrabApp {
 }
 
 impl WirecrabApp {
-    fn new(path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let loader = LoaderState::new(path.clone());
+    fn new(path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let loader = LoaderState::with_optional_path(path.clone());
         let flow_view = FlowView::new(window, cx);
         let detail_pane = DetailPane::new(cx);
         let main_split_state = cx.new(|_| ResizableState::default());
@@ -450,7 +463,7 @@ impl WirecrabApp {
         .detach();
 
         Self {
-            path: path.to_string_lossy().to_string(),
+            path: path.map(|p| p.to_string_lossy().to_string()),
             loader,
             flows: FlowStore::new(),
             flow_view,
@@ -460,6 +473,33 @@ impl WirecrabApp {
             prefer_names: true,
             theme_mode: ThemeMode::Dark,
         }
+    }
+
+    fn apply_selected_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.path = Some(path.to_string_lossy().to_string());
+        self.loader.start(path);
+        self.flows = FlowStore::new();
+        self.detail_pane.close(cx);
+        cx.notify();
+    }
+
+    fn pick_and_load_file(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn(|app: gpui::WeakEntity<WirecrabApp>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                let selected = std::thread::spawn(|| FileDialog::new().set_title("Open capture").pick_file())
+                    .join()
+                    .ok()
+                    .flatten();
+
+                if let Some(path) = selected {
+                    let _ = app.update(&mut cx, |app, cx| app.apply_selected_path(path, cx));
+                }
+
+                Ok::<(), anyhow::Error>(())
+            }
+        })
+        .detach();
     }
 
     fn check_loader(&mut self, cx: &mut Context<Self>) -> bool {
@@ -476,14 +516,14 @@ impl WirecrabApp {
                 info!(flow_count = flows.len(), "Loader ready with parsed flows");
                 self.flows.ingest(flows, start_timestamp, name_resolutions);
                 cx.notify();
-                false
+                true
             }
             FlowLoadStatus::Error(_) => {
                 warn!("Loader encountered an error");
                 cx.notify();
-                false
+                true
             }
-            FlowLoadStatus::Idle => false,
+            FlowLoadStatus::Idle => true,
         }
     }
 
@@ -515,7 +555,10 @@ impl WirecrabApp {
     fn render_loader_status_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if let Some(progress) = self.loader.progress() {
             let progress_percent = (progress * 100.0).clamp(0.0, 100.0);
-            let headline = format!("Loading {}", self.path);
+            let headline = match &self.path {
+                Some(path) => format!("Loading {}", path),
+                None => "Loading capture".to_string(),
+            };
 
             let status = div()
                 .id("loader_status_progress")
@@ -562,7 +605,10 @@ impl WirecrabApp {
         }
 
         if let Some(error) = self.loader.error() {
-            let message = error.summary(&self.path);
+            let message = match &self.path {
+                Some(path) => error.summary(path),
+                None => error.summary("(no file)"),
+            };
 
             let status = div()
                 .id("loader_status_error")
@@ -636,17 +682,32 @@ impl Render for WirecrabApp {
 
         let toolbar = {
             let flow_count = self.flows.total_flows();
+            let path_text = self
+                .path
+                .clone()
+                .unwrap_or_else(|| "Select a capture to begin".to_string());
+
+            let open_handler = cx.listener(|app: &mut WirecrabApp, _event: &ClickEvent, window, cx| {
+                app.pick_and_load_file(window, cx);
+            });
+
             let file_info = div()
                 .flex()
                 .items_center()
                 .gap_2()
-                .child(Icon::new(IconName::FolderOpen))
+                .child(
+                    Button::new("open_file_button")
+                        .icon(IconName::FolderOpen)
+                        .ghost()
+                        .compact()
+                        .on_click(open_handler),
+                )
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .gap_0()
-                        .child(div().text_sm().child(self.path.clone()))
+                        .child(div().text_sm().child(path_text))
                         .child(
                             div()
                                 .text_xs()
@@ -753,7 +814,7 @@ impl Render for WirecrabApp {
     }
 }
 
-pub fn run_ui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_ui(path: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     let app = Application::new().with_assets(Assets);
     info!("Launching GPUI application");
 
@@ -773,8 +834,9 @@ pub fn run_ui(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             }),
             ..Default::default()
         };
+        let initial_path = path.clone();
         cx.open_window(win_opts, move |window, cx| {
-            let app = cx.new(|cx| WirecrabApp::new(path.clone(), window, cx));
+            let app = cx.new(|cx| WirecrabApp::new(initial_path.clone(), window, cx));
 
             cx.new(move |cx| Root::new(app, window, cx))
         })
