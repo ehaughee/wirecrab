@@ -5,4 +5,3 @@ wirecrab.log
 .jj/
 .vscode/*
 !.vscode/settings.json
-.cargo/*

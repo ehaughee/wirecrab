@@ -64,6 +64,38 @@ PS> cargo run --features "tui" -- --tui .\testdata\win_pcap.pcapng --log-level d
 
 Log files are appended to, so clear or rotate them as needed.
 
+## Test coverage
+
+Wirecrab uses [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) for coverage. Install it once:
+
+```pwsh
+PS> cargo install cargo-llvm-cov
+```
+
+Collect coverage (all crates, UI + TUI features) and emit an HTML report at `target/llvm-cov/html`:
+
+```pwsh
+PS> cargo coverage
+```
+
+Print a terminal summary (runs a fresh coverage pass with UI + TUI features, summary only):
+
+```pwsh
+PS> cargo coverage-summary
+```
+
+Notes:
+- `coverage` and `coverage-summary` both rebuild/run tests; expect a short compile step.
+- HTML report is generated at `target/llvm-cov/html/index.html`.
+
+Run directly without the aliases if you need custom flags:
+
+```pwsh
+PS> cargo llvm-cov --workspace --features "ui,tui" --html
+PS> cargo llvm-cov --workspace --features "ui,tui" --summary-only
+PS> cargo llvm-cov --workspace --features "ui,tui" --lcov --output-path target/coverage/lcov.info
+```
+
 ## Troubleshooting
 
 - **Missing feature errors**: Ensure you pass `--features "ui"` or `--features "tui"` to `cargo run/build` based on the frontend you want.

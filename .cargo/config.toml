@@ -1,0 +1,12 @@
+[target.x86_64-pc-windows-msvc]
+linker = "$HOME\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\lib\\rustlib\\x86_64-pc-windows-msvc\\bin\\rust-lld.exe"
+
+[alias]
+coverage = ["llvm-cov", "--workspace", "--features", "ui,tui", "--html"]
+coverage-summary = [
+    "llvm-cov",
+    "--workspace",
+    "--features",
+    "ui,tui",
+    "--summary-only",
+]
