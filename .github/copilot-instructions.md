@@ -18,3 +18,4 @@ When generating code for the Wirecrab project, please adhere to the following gu
 11. When dealing with network protocols or data structures, ensure that any parsing or serialization logic adheres to relevant standards and best practices.
 12. After every change, check the results with `cargo check --features ui,tui` to ensure that both UI and TUI features are correctly handled.
 13. After every change, check the results with `cargo clippy --features ui,tui` to ensure that the code adheres to Rust's best practices and style guidelines.
+14. Always use OS-specific standard shell commands where possible.  If not possible and writing a script is necessary, explain why and ask first.
