@@ -12,5 +12,9 @@
   "chat.tools.urls.autoApprove": {
     "https://docs.rs": true,
     "https://longbridge.github.io": true
+  },
+  "chat.tools.terminal.autoApprove": {
+    "cargo clippy --features ui,tui": true,
+    "cargo check --features ui,tui": true
   }
 }
